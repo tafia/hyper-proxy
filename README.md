@@ -5,7 +5,7 @@ A proxy connector for hyper based applications.
 ## Credits
 
 Large part of the code comes from [reqwest](https://github.com/seanmonstar/reqwest).
-It just extract the core part so everyone can use it.
+The core part as just been extracted and slightly enhanced.
 
  Main changes are:
 - support for authentication
@@ -32,11 +32,11 @@ use tokio_core::reactor::Core;
 fn main() {
     let mut core = Core::new().unwrap();
     let handle = core.handle();
-    let uri = "http://my-proxy:8080".parse().unwrap();
 
     let proxy = {
+        let proxy_uri = "http://my-proxy:8080".parse().unwrap();
         let proxy_connector = HttpConnector::new(4, &handle);
-        let mut proxy = Proxy::new(proxy_connector, Intercept::All, uri).unwrap();
+        let mut proxy = Proxy::new(proxy_connector, Intercept::All, proxy_uri).unwrap();
         proxy.set_authorization(Basic {
             username: "John Doe".into(),
             password: Some("Agent1234".into()),
