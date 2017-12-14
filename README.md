@@ -60,7 +60,6 @@ The core part as just been extracted and slightly enhanced.
 - support for authentication
 - add non secured tunneling
 - add the possibility to add additional headers when connecting to the proxy
-- remove `Custom` proxy as it is not clear yet if this is that useful
 
 [1]: https://crates.io/crates/hyper
 [2]: https://github.com/seanmonstar/reqwest

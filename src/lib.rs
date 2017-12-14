@@ -57,6 +57,7 @@ mod tunnel;
 mod stream;
 
 use std::any::Any;
+use std::fmt;
 use std::io;
 use futures::Future;
 use hyper::Uri;
@@ -68,7 +69,6 @@ use tokio_tls::TlsConnectorExt;
 use stream::ProxyStream;
 
 /// The Intercept enum to filter connections
-#[derive(Clone, Debug, Copy)]
 pub enum Intercept {
     /// All incoming connection will go through proxy
     All,
@@ -76,6 +76,19 @@ pub enum Intercept {
     Http,
     /// Only https connections will go through proxy
     Https,
+    /// A custom intercept
+    Custom(Box<Fn(&Uri) -> bool>),
+}
+
+impl fmt::Debug for Intercept {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        match *self {
+            Intercept::All => write!(f, "All"),
+            Intercept::Http => write!(f, "Http"),
+            Intercept::Https => write!(f, "Https"),
+            Intercept::Custom(_) => write!(f, "Custom"),
+        }
+    }
 }
 
 impl Intercept {
@@ -84,6 +97,7 @@ impl Intercept {
             (&Intercept::All, _)
             | (&Intercept::Http, Some("http"))
             | (&Intercept::Https, Some("https")) => true,
+            (&Intercept::Custom(ref f), _) => f(uri),
             _ => false,
         }
     }
