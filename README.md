@@ -1,18 +1,12 @@
 # hyper-proxy
 
-A proxy connector for hyper based applications.
+[![Travis Build Status](https://travis-ci.org/tafia/hyper-proxy.svg?branch=master)](https://travis-ci.org/tafia/hyper-proxy)
+[![MIT licensed](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+[![crates.io](http://meritbadge.herokuapp.com/hyper-proxy)](https://crates.io/crates/hyper-proxy)
 
-## Credits
+A proxy connector for [hyper][1] based applications.
 
-Large part of the code comes from [reqwest](https://github.com/seanmonstar/reqwest).
-The core part as just been extracted and slightly enhanced.
-
- Main changes are:
-- support for authentication
-- add non secured tunneling
-- add the possibility to add additional headers when connecting to the proxy
-- remove `Custom` proxy as it is not clear yet if this is that useful
-
+[Documentation][3]
 
 ## Example
 
@@ -33,6 +27,7 @@ fn main() {
     let mut core = Core::new().unwrap();
     let handle = core.handle();
 
+    // create a proxy connector, authenticate etc ...
     let proxy = {
         let proxy_uri = "http://my-proxy:8080".parse().unwrap();
         let proxy_connector = HttpConnector::new(4, &handle);
@@ -44,6 +39,7 @@ fn main() {
         proxy
     };
 
+    // use the connector in your hyper Client
     let client = Client::configure().connector(proxy).build(&handle);
     let uri = "http://my-remote-website.com".parse().unwrap();
     let fut = client
@@ -54,3 +50,18 @@ fn main() {
     let res = core.run(fut).unwrap();
 }
 ```
+
+## Credits
+
+Large part of the code comes from [reqwest][2].
+The core part as just been extracted and slightly enhanced.
+
+ Main changes are:
+- support for authentication
+- add non secured tunneling
+- add the possibility to add additional headers when connecting to the proxy
+- remove `Custom` proxy as it is not clear yet if this is that useful
+
+[1]: https://crates.io/crates/hyper
+[2]: https://github.com/seanmonstar/reqwest
+[3]: https://docs.rs/hyper-proxy
