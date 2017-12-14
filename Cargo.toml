@@ -1,7 +1,16 @@
 [package]
 name = "hyper-proxy"
 version = "0.1.0"
-authors = ["Johann Tuffe"]
+authors = ["Johann Tuffe <tafia973@gmail.com"]
+description = "A proxy connector for Hyper-based applications"
+
+documentation = "https://docs.rs/hyper-proxy"
+repository = "https://github.com/tafia/hyper-proxy"
+
+readme = "README.md"
+keywords = ["hyper", "proxy", "tokio", "ssl"]
+categories = ["web-programming::http-client", "asynchronous", "authentication"]
+license = "MIT"
 
 [dependencies]
 hyper = "0.11.0"
