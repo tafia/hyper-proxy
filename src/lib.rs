@@ -76,8 +76,10 @@ pub enum Intercept {
     Http,
     /// Only https connections will go through proxy
     Https,
+    /// No connection will go through this proxy
+    None,
     /// A custom intercept
-    Custom(Box<Fn(&Uri) -> bool>),
+    Custom(Box<Fn(&Uri) -> bool + Send + Sync>),
 }
 
 impl fmt::Debug for Intercept {
@@ -86,13 +88,15 @@ impl fmt::Debug for Intercept {
             Intercept::All => write!(f, "All"),
             Intercept::Http => write!(f, "Http"),
             Intercept::Https => write!(f, "Https"),
+            Intercept::None => write!(f, "None"),
             Intercept::Custom(_) => write!(f, "Custom"),
         }
     }
 }
 
 impl Intercept {
-    fn matches(&self, uri: &Uri) -> bool {
+    /// A function to check if given `Uri` is proxied
+    pub fn matches(&self, uri: &Uri) -> bool {
         match (self, uri.scheme()) {
             (&Intercept::All, _)
             | (&Intercept::Http, Some("http"))
@@ -110,6 +114,13 @@ pub struct Proxy<C> {
     uri: Uri,
     connector: C,
     tls: Option<TlsConnector>,
+}
+
+impl<C: fmt::Debug> fmt::Debug for Proxy<C> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        write!(f, "Proxy {{ intercept: {:?}, headers: {:?}, uri: {:?}, connector: {:?} }}",
+               self.intercept, self.headers, self.uri, self.connector)
+    }
 }
 
 impl<C> Proxy<C> {
@@ -138,6 +149,17 @@ impl<C> Proxy<C> {
         }
     }
 
+    /// Change proxy connector
+    pub fn with_connector<CC>(self, connector: CC) -> Proxy<CC> {
+        Proxy {
+            intercept: self.intercept,
+            uri: self.uri,
+            headers: self.headers,
+            connector: connector,
+            tls: self.tls,
+        }
+    }
+
     /// Set proxy authorization
     pub fn set_authorization<S: Scheme + Any>(&mut self, scheme: S) {
         self.headers.set(ProxyAuthorization(scheme));
@@ -146,6 +168,21 @@ impl<C> Proxy<C> {
     /// Set a custom header
     pub fn set_header<H: Header>(&mut self, header: H) {
         self.headers.set(header);
+    }
+
+    /// Set a custom header
+    pub fn set_tls(&mut self, tls: Option<TlsConnector>) {
+        self.tls = tls;
+    }
+
+    /// Get current intercept
+    pub fn intercept(&self) -> &Intercept {
+        &self.intercept
+    }
+
+    /// Get current intercept
+    pub fn uri(&self) -> &Uri {
+        &self.uri
     }
 }
 
