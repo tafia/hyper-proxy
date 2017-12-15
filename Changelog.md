@@ -8,6 +8,10 @@
   - test: Adding missing tests
   - chore: Changes to the build process or auxiliary tools/libraries/documentation
 
+## master
+- refactor: add a match_fn macro in tunnel
+- fix: add missing '\' in connect message
+
 ## 0.2.0
 - feat: Add Intercept::None to never intercept any connection
 - fix: Add Send + Sync constraints on Intercept::Custom function (breaking)

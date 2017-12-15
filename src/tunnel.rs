@@ -10,6 +10,7 @@ pub(crate) struct Tunnel<S> {
     state: TunnelState,
 }
 
+#[derive(Debug)]
 enum TunnelState {
     Writing,
     Reading,
@@ -18,11 +19,12 @@ enum TunnelState {
 impl<S> Tunnel<S> {
     /// Creates a new tunnel through proxy
     pub fn new(host: &str, port: u16, headers: &Headers) -> Tunnel<S> {
+
         let buf = format!(
             "\
             CONNECT {0}:{1} HTTP/1.1\r\n\
             Host: {0}:{1}\r\n\
-            {2}\r\n
+            {2}\
             \r\n\
             ",
             host, port, headers
