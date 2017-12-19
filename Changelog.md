@@ -8,6 +8,9 @@
   - test: Adding missing tests
   - chore: Changes to the build process or auxiliary tools/libraries/documentation
 
+## master
+- doc: add a set_proxy expression for http requests
+
 ## 0.3.0
 - refactor: add a match_fn macro in tunnel
 - fix: add missing '\' in connect message

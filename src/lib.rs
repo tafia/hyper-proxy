@@ -34,6 +34,7 @@
 //!     let uri = "http://my-remote-website.com".parse().unwrap();
 //!     let mut req = Request::new(Method::Get, uri);
 //!     req.headers_mut().extend(proxy.headers().iter());
+//!     req.set_proxy(true);
 //!     let client = Client::configure().connector(proxy).build(&handle);
 //!     let fut_http = client.request(req)
 //!         .and_then(|res| res.body().concat2())
