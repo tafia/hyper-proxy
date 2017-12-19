@@ -7,7 +7,7 @@
 //! extern crate futures;
 //! extern crate tokio_core;
 //!
-//! use hyper::{Chunk, Client};
+//! use hyper::{Chunk, Client, Request, Method};
 //! use hyper::client::HttpConnector;
 //! use hyper::header::Basic;
 //! use futures::{Future, Stream};
@@ -29,14 +29,26 @@
 //!         proxy
 //!     };
 //!
-//!     let client = Client::configure().connector(proxy).build(&handle);
+//!     // Connecting to http will trigger regular GETs and POSTs.
+//!     // We need to manually append the relevant headers to the request
 //!     let uri = "http://my-remote-website.com".parse().unwrap();
-//!     let fut = client
+//!     let mut req = Request::new(Method::Get, uri);
+//!     req.headers_mut().extend(proxy.headers().iter());
+//!     let client = Client::configure().connector(proxy).build(&handle);
+//!     let fut_http = client.request(req)
+//!         .and_then(|res| res.body().concat2())
+//!         .map(move |body: Chunk| ::std::str::from_utf8(&body).unwrap().to_string());
+//!
+//!     // Connecting to an https uri is straightforward (uses 'CONNECT' method underneath)
+//!     let uri = "https://my-remote-websitei-secured.com".parse().unwrap();
+//!     let fut_https = client
 //!         .get(uri)
 //!         .and_then(|res| res.body().concat2())
 //!         .map(move |body: Chunk| ::std::str::from_utf8(&body).unwrap().to_string());
 //!
-//!     let res = core.run(fut).unwrap();
+//!     let futs = fut_http.join(fut_https);
+//!
+//!     let (http_res, https_res) = core.run(futs).unwrap();
 //! }
 //! ```
 
@@ -63,7 +75,7 @@ use std::sync::Arc;
 use futures::Future;
 use hyper::Uri;
 use hyper::client::Service;
-use hyper::header::{Header, Headers, Authorization, ProxyAuthorization, Scheme};
+use hyper::header::{Authorization, Header, Headers, ProxyAuthorization, Scheme};
 use native_tls::TlsConnector;
 use tokio_io::{AsyncRead, AsyncWrite};
 use tokio_tls::TlsConnectorExt;

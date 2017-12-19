@@ -8,9 +8,11 @@
   - test: Adding missing tests
   - chore: Changes to the build process or auxiliary tools/libraries/documentation
 
-## master
+## 0.3.0
 - refactor: add a match_fn macro in tunnel
 - fix: add missing '\' in connect message
+- feat: do not use connect for pure http request. Else provide headers to update the primary request with.
+- feat: have Custom intercept be an opaque struct using `Arc` to be Send + Sync + Clone
 
 ## 0.2.0
 - feat: Add Intercept::None to never intercept any connection
