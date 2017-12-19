@@ -1,3 +1,4 @@
+use io_err;
 use std::io::{self, Cursor};
 use bytes::{BufMut, IntoBuf};
 use futures::{Async, Future, Poll};
@@ -19,7 +20,6 @@ enum TunnelState {
 impl<S> Tunnel<S> {
     /// Creates a new tunnel through proxy
     pub fn new(host: &str, port: u16, headers: &Headers) -> Tunnel<S> {
-
         let buf = format!(
             "CONNECT {0}:{1} HTTP/1.1\r\n\
              Host: {0}:{1}\r\n\
@@ -54,7 +54,7 @@ impl<S: AsyncRead + AsyncWrite + 'static> Future for Tunnel<S> {
                     self.state = TunnelState::Reading;
                     self.buf.get_mut().truncate(0);
                 } else if n == 0 {
-                    return Err(tunnel_eof());
+                    return Err(io_err("unexpected EOF while tunnel writing"));
                 }
             } else {
                 let n = try_ready!(
@@ -64,7 +64,7 @@ impl<S: AsyncRead + AsyncWrite + 'static> Future for Tunnel<S> {
                         .read_buf(&mut self.buf.get_mut())
                 );
                 if n == 0 {
-                    return Err(tunnel_eof());
+                    return Err(io_err("unexpected EOF while tunnel reading"));
                 } else {
                     let read = &self.buf.get_ref()[..];
                     if read.len() > 12 {
@@ -74,21 +74,13 @@ impl<S: AsyncRead + AsyncWrite + 'static> Future for Tunnel<S> {
                             }
                         // else read more
                         } else {
-                            return Err(io::Error::new(io::ErrorKind::Other, "unsuccessful tunnel"));
+                            return Err(io_err("unsuccessful tunnel"));
                         }
                     }
                 }
             }
         }
     }
-}
-
-#[inline]
-fn tunnel_eof() -> io::Error {
-    io::Error::new(
-        io::ErrorKind::UnexpectedEof,
-        "unexpected eof while tunneling",
-    )
 }
 
 #[cfg(test)]
@@ -99,7 +91,7 @@ mod tests {
     use futures::Future;
     use tokio_core::reactor::Core;
     use tokio_core::net::TcpStream;
-    use super::{Tunnel, Headers};
+    use super::{Headers, Tunnel};
 
     fn tunnel<S>(conn: S, host: String, port: u16) -> Tunnel<S> {
         Tunnel::new(&host, port, &Headers::new()).with_stream(conn)
@@ -141,9 +133,7 @@ mod tests {
         let work = TcpStream::connect(&addr, &core.handle());
         let host = addr.ip().to_string();
         let port = addr.port();
-        let work = work.and_then(|tcp| {
-            tunnel(tcp, host, port)
-        });
+        let work = work.and_then(|tcp| tunnel(tcp, host, port));
 
         core.run(work).unwrap();
     }
@@ -156,9 +146,7 @@ mod tests {
         let work = TcpStream::connect(&addr, &core.handle());
         let host = addr.ip().to_string();
         let port = addr.port();
-        let work = work.and_then(|tcp| {
-            tunnel(tcp, host, port)
-        });
+        let work = work.and_then(|tcp| tunnel(tcp, host, port));
 
         core.run(work).unwrap_err();
     }
@@ -171,9 +159,7 @@ mod tests {
         let work = TcpStream::connect(&addr, &core.handle());
         let host = addr.ip().to_string();
         let port = addr.port();
-        let work = work.and_then(|tcp| {
-            tunnel(tcp, host, port)
-        });
+        let work = work.and_then(|tcp| tunnel(tcp, host, port));
 
         core.run(work).unwrap_err();
     }
