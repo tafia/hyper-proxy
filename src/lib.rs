@@ -63,7 +63,7 @@ use std::sync::Arc;
 use futures::Future;
 use hyper::Uri;
 use hyper::client::Service;
-use hyper::header::{Header, Headers, ProxyAuthorization, Scheme};
+use hyper::header::{Header, Headers, Authorization, ProxyAuthorization, Scheme};
 use native_tls::TlsConnector;
 use tokio_io::{AsyncRead, AsyncWrite};
 use tokio_tls::TlsConnectorExt;
@@ -172,7 +172,14 @@ impl<C> Proxy<C> {
 
     /// Set proxy authorization
     pub fn set_authorization<S: Scheme + Any>(&mut self, scheme: S) {
-        self.headers.set(ProxyAuthorization(scheme));
+        match self.intercept {
+            Intercept::Http => self.headers.set(Authorization(scheme)),
+            Intercept::Https => self.headers.set(ProxyAuthorization(scheme.clone())),
+            _ => {
+                self.headers.set(ProxyAuthorization(scheme.clone()));
+                self.headers.set(Authorization(scheme));
+            }
+        }
     }
 
     /// Set a custom header
