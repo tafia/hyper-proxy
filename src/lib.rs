@@ -187,7 +187,7 @@ impl<C> Proxy<C> {
     pub fn set_authorization<S: Scheme + Any>(&mut self, scheme: S) {
         match self.intercept {
             Intercept::Http => self.headers.set(Authorization(scheme)),
-            Intercept::Https => self.headers.set(ProxyAuthorization(scheme.clone())),
+            Intercept::Https => self.headers.set(ProxyAuthorization(scheme)),
             _ => {
                 self.headers.set(ProxyAuthorization(scheme.clone()));
                 self.headers.set(Authorization(scheme));
@@ -200,7 +200,7 @@ impl<C> Proxy<C> {
         self.headers.set(header);
     }
 
-    /// Set a custom header
+    /// Set or unset tls when tunneling
     pub fn set_tls(&mut self, tls: Option<TlsConnector>) {
         self.tls = tls;
     }
@@ -215,7 +215,7 @@ impl<C> Proxy<C> {
         &self.headers
     }
 
-    /// Get current intercept
+    /// Get proxy uri
     pub fn uri(&self) -> &Uri {
         &self.uri
     }

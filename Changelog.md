@@ -10,6 +10,8 @@
 
 ## master
 - doc: add a set_proxy expression for http requests
+- doc: fix some wrong comments
+- perf: avoid one clone
 
 ## 0.3.0
 - refactor: add a match_fn macro in tunnel
