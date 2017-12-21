@@ -16,11 +16,11 @@ extern crate hyper_proxy;
 extern crate futures;
 extern crate tokio_core;
 
-use hyper::{Chunk, Client, Request, Method};
+use hyper::{Chunk, Client, Request, Method, Uri};
 use hyper::client::HttpConnector;
 use hyper::header::Basic;
 use futures::{Future, Stream};
-use hyper_proxy::{Proxy, Intercept};
+use hyper_proxy::{Proxy, ProxyConnector, Intercept};
 use tokio_core::reactor::Core;
 
 fn main() {
@@ -29,21 +29,24 @@ fn main() {
 
     let proxy = {
         let proxy_uri = "http://my-proxy:8080".parse().unwrap();
-        let proxy_connector = HttpConnector::new(4, &handle);
-        let mut proxy = Proxy::new(proxy_connector, Intercept::All, proxy_uri).unwrap();
+        let mut proxy = Proxy::new(Intercept::All, proxy_uri);
         proxy.set_authorization(Basic {
-            username: "John Doe".into(),
-            password: Some("Agent1234".into()),
-        });
-        proxy
+                                   username: "John Doe".into(),
+                                   password: Some("Agent1234".into()),
+                               });
+        let connector = HttpConnector::new(4, &handle);
+        let proxy_connector = ProxyConnector::from_proxy(connector, proxy).unwrap();
+        proxy_connector
     };
 
-    // Connecting to http will trigger regular GETs and POSTs. 
+    // Connecting to http will trigger regular GETs and POSTs.
     // We need to manually append the relevant headers to the request
-    let uri = "http://my-remote-website.com".parse().unwrap();
-    let mut req = Request::new(Method::Get, uri);
-    req.headers_mut().extend(proxy.headers().iter());
-    req.set_proxy(true);
+    let uri: Uri = "http://my-remote-website.com".parse().unwrap();
+    let mut req = Request::new(Method::Get, uri.clone());
+    if let Some(headers) = proxy.http_headers(&uri) {
+        req.headers_mut().extend(headers.iter());
+        req.set_proxy(true);
+    }
     let client = Client::configure().connector(proxy).build(&handle);
     let fut_http = client.request(req)
         .and_then(|res| res.body().concat2())
@@ -58,7 +61,7 @@ fn main() {
 
     let futs = fut_http.join(fut_https);
 
-    let (http_res, https_res) = core.run(futs).unwrap();
+    let (_http_res, _https_res) = core.run(futs).unwrap();
 }
 ```
 

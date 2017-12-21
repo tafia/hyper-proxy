@@ -7,11 +7,11 @@
 //! extern crate futures;
 //! extern crate tokio_core;
 //!
-//! use hyper::{Chunk, Client, Request, Method};
+//! use hyper::{Chunk, Client, Request, Method, Uri};
 //! use hyper::client::HttpConnector;
 //! use hyper::header::Basic;
 //! use futures::{Future, Stream};
-//! use hyper_proxy::{Proxy, Intercept};
+//! use hyper_proxy::{Proxy, ProxyConnector, Intercept};
 //! use tokio_core::reactor::Core;
 //!
 //! fn main() {
@@ -20,21 +20,24 @@
 //!
 //!     let proxy = {
 //!         let proxy_uri = "http://my-proxy:8080".parse().unwrap();
-//!         let proxy_connector = HttpConnector::new(4, &handle);
-//!         let mut proxy = Proxy::new(proxy_connector, Intercept::All, proxy_uri).unwrap();
+//!         let mut proxy = Proxy::new(Intercept::All, proxy_uri);
 //!         proxy.set_authorization(Basic {
-//!             username: "John Doe".into(),
-//!             password: Some("Agent1234".into()),
-//!         });
-//!         proxy
+//!                                    username: "John Doe".into(),
+//!                                    password: Some("Agent1234".into()),
+//!                                });
+//!         let connector = HttpConnector::new(4, &handle);
+//!         let proxy_connector = ProxyConnector::from_proxy(connector, proxy).unwrap();
+//!         proxy_connector
 //!     };
 //!
 //!     // Connecting to http will trigger regular GETs and POSTs.
 //!     // We need to manually append the relevant headers to the request
-//!     let uri = "http://my-remote-website.com".parse().unwrap();
-//!     let mut req = Request::new(Method::Get, uri);
-//!     req.headers_mut().extend(proxy.headers().iter());
-//!     req.set_proxy(true);
+//!     let uri: Uri = "http://my-remote-website.com".parse().unwrap();
+//!     let mut req = Request::new(Method::Get, uri.clone());
+//!     if let Some(headers) = proxy.http_headers(&uri) {
+//!         req.headers_mut().extend(headers.iter());
+//!         req.set_proxy(true);
+//!     }
 //!     let client = Client::configure().connector(proxy).build(&handle);
 //!     let fut_http = client.request(req)
 //!         .and_then(|res| res.body().concat2())
@@ -49,7 +52,7 @@
 //!
 //!     let futs = fut_http.join(fut_https);
 //!
-//!     let (http_res, https_res) = core.run(futs).unwrap();
+//!     let (_http_res, _https_res) = core.run(futs).unwrap();
 //! }
 //! ```
 
@@ -126,64 +129,31 @@ impl Intercept {
     }
 }
 
-/// The proxy
-#[derive(Clone)]
-pub struct Proxy<C> {
+impl<F: Fn(&Uri) -> bool + Send + Sync + 'static> From<F> for Intercept {
+    fn from(f: F) -> Intercept {
+        Intercept::Custom(f.into())
+    }
+}
+
+/// A Proxy strcut
+#[derive(Clone, Debug)]
+pub struct Proxy {
     intercept: Intercept,
     headers: Headers,
     uri: Uri,
-    connector: C,
-    tls: Option<TlsConnector>,
 }
 
-impl<C: fmt::Debug> fmt::Debug for Proxy<C> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        write!(
-            f,
-            "Proxy {{ intercept: {:?}, headers: {:?}, uri: {:?}, connector: {:?} }}",
-            self.intercept, self.headers, self.uri, self.connector
-        )
-    }
-}
-
-impl<C> Proxy<C> {
-    /// Create a new secured Proxy
-    pub fn new(connector: C, intercept: Intercept, uri: Uri) -> Result<Self, io::Error> {
-        let tls = TlsConnector::builder()
-            .and_then(|b| b.build())
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-        Ok(Proxy {
-            intercept: intercept,
-            uri: uri,
-            headers: Headers::new(),
-            connector: connector,
-            tls: Some(tls),
-        })
-    }
-
-    /// Create a new unsecured Proxy
-    pub fn unsecured(connector: C, intercept: Intercept, uri: Uri) -> Self {
+impl Proxy {
+    /// Create a new `Proxy`
+    pub fn new<I: Into<Intercept>>(intercept: I, uri: Uri) -> Proxy {
         Proxy {
-            intercept: intercept,
+            intercept: intercept.into(),
             uri: uri,
             headers: Headers::new(),
-            connector: connector,
-            tls: None,
         }
     }
 
-    /// Change proxy connector
-    pub fn with_connector<CC>(self, connector: CC) -> Proxy<CC> {
-        Proxy {
-            intercept: self.intercept,
-            uri: self.uri,
-            headers: self.headers,
-            connector: connector,
-            tls: self.tls,
-        }
-    }
-
-    /// Set proxy authorization
+    /// Set `Proxy` authorization
     pub fn set_authorization<S: Scheme + Any>(&mut self, scheme: S) {
         match self.intercept {
             Intercept::Http => self.headers.set(Authorization(scheme)),
@@ -198,11 +168,6 @@ impl<C> Proxy<C> {
     /// Set a custom header
     pub fn set_header<H: Header>(&mut self, header: H) {
         self.headers.set(header);
-    }
-
-    /// Set or unset tls when tunneling
-    pub fn set_tls(&mut self, tls: Option<TlsConnector>) {
-        self.tls = tls;
     }
 
     /// Get current intercept
@@ -221,7 +186,112 @@ impl<C> Proxy<C> {
     }
 }
 
-impl<C> Service for Proxy<C>
+/// A wrapper around `Proxy`s with a connector.
+#[derive(Clone)]
+pub struct ProxyConnector<C> {
+    proxies: Vec<Proxy>,
+    connector: C,
+    tls: Option<TlsConnector>,
+}
+
+impl<C: fmt::Debug> fmt::Debug for ProxyConnector<C> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        write!(
+            f,
+            "ProxyConnector {}{{ proxies: {:?}, connector: {:?} }}",
+            if self.tls.is_some() {
+                ""
+            } else {
+                "(unsecured)"
+            },
+            self.proxies,
+            self.connector
+        )
+    }
+}
+
+impl<C> ProxyConnector<C> {
+    /// Create a new secured Proxies
+    pub fn new(connector: C) -> Result<Self, io::Error> {
+        let tls = TlsConnector::builder()
+            .and_then(|b| b.build())
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        Ok(ProxyConnector {
+            proxies: Vec::new(),
+            connector: connector,
+            tls: Some(tls),
+        })
+    }
+
+    /// Create a new unsecured Proxy
+    pub fn unsecured(connector: C) -> Self {
+        ProxyConnector {
+            proxies: Vec::new(),
+            connector: connector,
+            tls: None,
+        }
+    }
+
+    /// Create a proxy connector and attach a particular proxy
+    pub fn from_proxy(connector: C, proxy: Proxy) -> Result<Self, io::Error> {
+        let mut c = ProxyConnector::new(connector)?;
+        c.proxies.push(proxy);
+        Ok(c)
+    }
+
+    /// Create a proxy connector and attach a particular proxy
+    pub fn from_proxy_unsecured(connector: C, proxy: Proxy) -> Self {
+        let mut c = ProxyConnector::unsecured(connector);
+        c.proxies.push(proxy);
+        c
+    }
+
+    /// Change proxy connector
+    pub fn with_connector<CC>(self, connector: CC) -> ProxyConnector<CC> {
+        ProxyConnector {
+            connector: connector,
+            proxies: self.proxies,
+            tls: self.tls,
+        }
+    }
+
+    /// Set or unset tls when tunneling
+    pub fn set_tls(&mut self, tls: Option<TlsConnector>) {
+        self.tls = tls;
+    }
+
+    /// Get the current proxies
+    pub fn proxies(&self) -> &[Proxy] {
+        &self.proxies
+    }
+
+    /// Add a new additional proxy
+    pub fn add_proxy(&mut self, proxy: Proxy) {
+        self.proxies.push(proxy);
+    }
+
+    /// Extend the list of proxies
+    pub fn extend_proxies<I: IntoIterator<Item = Proxy>>(&mut self, proxies: I) {
+        self.proxies.extend(proxies)
+    }
+
+    /// Get http headers for a matching uri
+    ///
+    /// These headers must be appended to the hyper Request for the proxy to work properly.
+    /// This is needed only for http requests.
+    pub fn http_headers(&self, uri: &Uri) -> Option<&Headers> {
+        if uri.scheme() != Some("http") {
+            return None;
+        }
+        self.match_proxy(uri).map(|p| &p.headers)
+    }
+
+    fn match_proxy(&self, uri: &Uri) -> Option<&Proxy> {
+        self.proxies.iter().find(|p| p.intercept.matches(uri))
+    }
+}
+
+impl<C> Service for ProxyConnector<C>
 where
     C: Service<Request = Uri, Error = io::Error> + 'static,
     C::Future: 'static,
@@ -233,13 +303,13 @@ where
     type Future = Box<Future<Item = ProxyStream<C::Response>, Error = Self::Error>>;
 
     fn call(&self, uri: Uri) -> Self::Future {
-        if self.intercept.matches(&uri) {
+        if let Some(ref p) = self.match_proxy(&uri) {
             if uri.scheme() == Some("https") {
                 let host = uri.host().unwrap().to_owned();
                 let port = uri.port().unwrap_or(443);
-                let tunnel = tunnel::Tunnel::new(&host, port, &self.headers);
+                let tunnel = tunnel::Tunnel::new(&host, port, &p.headers);
                 let proxy_stream = self.connector
-                    .call(self.uri.clone())
+                    .call(p.uri.clone())
                     .and_then(move |io| tunnel.with_stream(io));
                 match self.tls.as_ref() {
                     Some(tls) => {
@@ -258,7 +328,7 @@ where
                 // resources.
                 Box::new(
                     self.connector
-                        .call(self.uri.clone())
+                        .call(p.uri.clone())
                         .map(|s| ProxyStream::Regular(s)),
                 )
             }

@@ -8,7 +8,8 @@
   - test: Adding missing tests
   - chore: Changes to the build process or auxiliary tools/libraries/documentation
 
-## master
+## 0.4.0
+- feat: split Proxy into Proxy and ProxyConnector allowing to handle a list of proxies
 - doc: add a set_proxy expression for http requests
 - doc: fix some wrong comments
 - perf: avoid one clone
