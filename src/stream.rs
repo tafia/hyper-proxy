@@ -2,11 +2,14 @@ use std::io::{self, Read, Write};
 use bytes::{Buf, BufMut};
 use futures::Poll;
 use tokio_io::{AsyncRead, AsyncWrite};
+
+#[cfg(feature = "tls")]
 use tokio_tls::TlsStream;
 
 /// A Proxy Stream wrapper
 pub enum ProxyStream<R> {
     Regular(R),
+    #[cfg(feature = "tls")]
     Secured(TlsStream<R>),
 }
 
@@ -14,6 +17,7 @@ macro_rules! match_fn {
     ($self:expr, $fn:ident $(,$buf:expr)*) => {
         match *$self {
             ProxyStream::Regular(ref mut s) => s.$fn($($buf)*),
+            #[cfg(feature = "tls")]
             ProxyStream::Secured(ref mut s) => s.$fn($($buf)*),
         }
     }
@@ -42,6 +46,7 @@ impl<R: AsyncRead + AsyncWrite> AsyncRead for ProxyStream<R> {
     unsafe fn prepare_uninitialized_buffer(&self, buf: &mut [u8]) -> bool {
         match *self {
             ProxyStream::Regular(ref s) => s.prepare_uninitialized_buffer(buf),
+            #[cfg(feature = "tls")]
             ProxyStream::Secured(ref s) => s.prepare_uninitialized_buffer(buf),
         }
     }

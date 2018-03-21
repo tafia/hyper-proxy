@@ -64,9 +64,11 @@ extern crate futures;
 extern crate hyper;
 #[cfg(test)]
 extern crate hyper_tls;
+#[cfg(feature = "tls")]
 extern crate native_tls;
 extern crate tokio_core;
 extern crate tokio_io;
+#[cfg(feature = "tls")]
 extern crate tokio_tls;
 
 mod tunnel;
@@ -80,8 +82,10 @@ use futures::Future;
 use hyper::Uri;
 use hyper::client::Service;
 use hyper::header::{Authorization, Header, Headers, ProxyAuthorization, Scheme};
+#[cfg(feature = "tls")]
 use native_tls::TlsConnector;
 use tokio_io::{AsyncRead, AsyncWrite};
+#[cfg(feature = "tls")]
 use tokio_tls::TlsConnectorExt;
 use stream::ProxyStream;
 
@@ -191,7 +195,10 @@ impl Proxy {
 pub struct ProxyConnector<C> {
     proxies: Vec<Proxy>,
     connector: C,
+    #[cfg(feature = "tls")]
     tls: Option<TlsConnector>,
+    #[cfg(not(feature = "tls"))]
+    tls: Option<()>,
 }
 
 impl<C: fmt::Debug> fmt::Debug for ProxyConnector<C> {
@@ -212,6 +219,7 @@ impl<C: fmt::Debug> fmt::Debug for ProxyConnector<C> {
 
 impl<C> ProxyConnector<C> {
     /// Create a new secured Proxies
+    #[cfg(feature = "tls")]
     pub fn new(connector: C) -> Result<Self, io::Error> {
         let tls = TlsConnector::builder()
             .and_then(|b| b.build())
@@ -233,6 +241,7 @@ impl<C> ProxyConnector<C> {
     }
 
     /// Create a proxy connector and attach a particular proxy
+    #[cfg(feature = "tls")]
     pub fn from_proxy(connector: C, proxy: Proxy) -> Result<Self, io::Error> {
         let mut c = ProxyConnector::new(connector)?;
         c.proxies.push(proxy);
@@ -256,6 +265,7 @@ impl<C> ProxyConnector<C> {
     }
 
     /// Set or unset tls when tunneling
+    #[cfg(feature = "tls")]
     pub fn set_tls(&mut self, tls: Option<TlsConnector>) {
         self.tls = tls;
     }
@@ -312,6 +322,7 @@ where
                     .call(p.uri.clone())
                     .and_then(move |io| tunnel.with_stream(io));
                 match self.tls.as_ref() {
+                    #[cfg(feature = "tls")]
                     Some(tls) => {
                         let tls = tls.clone();
                         Box::new(
@@ -319,7 +330,10 @@ where
                                 .and_then(move |io| tls.connect_async(&host, io).map_err(io_err))
                                 .map(|s| ProxyStream::Secured(s)),
                         )
-                    }
+                    },
+                    #[cfg(not(feature = "tls"))]
+                    Some(_) => panic!("hyper-proxy was not built with TLS support"),
+
                     None => Box::new(proxy_stream.map(|s| ProxyStream::Regular(s))),
                 }
             } else {
