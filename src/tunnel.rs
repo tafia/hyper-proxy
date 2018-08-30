@@ -26,7 +26,7 @@ impl<'a> Display for HeadersDisplay<'a> {
     fn fmt(&self, f: &mut Formatter) -> Result<(), fmt::Error> {
         for (key, value) in self.0 {
             // FIXME: raw unwrap
-            write!(f, "{}: {}", key.as_str(), value.to_str().unwrap())?;
+            write!(f, "{}: {}\r\n", key.as_str(), value.to_str().unwrap())?;
         }
 
         Ok(())
