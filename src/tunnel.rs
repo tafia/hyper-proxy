@@ -25,8 +25,8 @@ struct HeadersDisplay<'a>(&'a HeaderMap);
 impl<'a> Display for HeadersDisplay<'a> {
     fn fmt(&self, f: &mut Formatter) -> Result<(), fmt::Error> {
         for (key, value) in self.0 {
-            // FIXME: raw unwrap
-            write!(f, "{}: {}\r\n", key.as_str(), value.to_str().unwrap())?;
+            let value_str = value.to_str().map_err(|_| fmt::Error)?;
+            write!(f, "{}: {}\r\n", key.as_str(), value_str)?;
         }
 
         Ok(())
@@ -123,13 +123,14 @@ mod tests {
         Tunnel::new(&host, port, &HeaderMap::new()).with_stream(conn, Connected::new())
     }
 
+    #[cfg_attr(rustfmt, rustfmt_skip)]
     macro_rules! mock_tunnel {
         () => {{
             mock_tunnel!(
                 b"\
-                                                                                HTTP/1.1 200 OK\r\n\
-                                                                                \r\n\
-                                                                                "
+                HTTP/1.1 200 OK\r\n\
+                \r\n\
+                "
             )
         }};
         ($write:expr) => {{
