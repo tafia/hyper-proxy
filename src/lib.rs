@@ -72,18 +72,16 @@ extern crate typed_headers;
 mod stream;
 mod tunnel;
 
-use futures::{future, Future};
-use http::header::{HeaderMap, HeaderName, HeaderValue, AUTHORIZATION, PROXY_AUTHORIZATION};
+use futures::Future;
+use http::header::{HeaderMap, HeaderName, HeaderValue};
 use hyper::client::connect::{Connect, Connected, Destination};
 use hyper::Uri;
 #[cfg(feature = "tls")]
 use native_tls::TlsConnector as NativeTlsConnector;
-use std::any::Any;
 use std::fmt;
 use std::io;
 use std::sync::Arc;
 use stream::ProxyStream;
-use tokio_io::{AsyncRead, AsyncWrite};
 #[cfg(feature = "tls")]
 use tokio_tls::TlsConnector;
 use typed_headers::{Authorization, Credentials, HeaderMapExt, ProxyAuthorization};
@@ -343,6 +341,15 @@ impl<C> ProxyConnector<C> {
     }
 }
 
+macro_rules! unwrap_or_future {
+    ($expr:expr) => {
+        match $expr {
+            std::result::Result::Ok(val) => val,
+            std::result::Result::Err(e) => return Box::new(futures::future::err(e)),
+        }
+    };
+}
+
 impl<C> Connect for ProxyConnector<C>
 where
     C: Connect + 'static,
@@ -358,7 +365,7 @@ where
                 let port = dst.port().unwrap_or(443);
                 let tunnel = tunnel::Tunnel::new(&host, port, &p.headers);
 
-                let proxy_dst = proxy_dst(&dst, &p.uri);
+                let proxy_dst = unwrap_or_future!(proxy_dst(&dst, &p.uri));
                 let proxy_stream = self
                     .connector
                     .connect(proxy_dst)
@@ -373,7 +380,6 @@ where
                                 .and_then(move |(io, _)| {
                                     let tls = TlsConnector::from(tls);
                                     tls.connect(&host, io).map_err(io_err)
-                                    // FIXME: pass connected through...
                                 }).map(|s| (ProxyStream::Secured(s), Connected::new().proxy(true))),
                         )
                     }
@@ -386,7 +392,7 @@ where
                 // without TLS, there is absolutely zero benefit from tunneling, as the proxy can
                 // read the plaintext traffic. Thus, tunneling is just restrictive to the proxies
                 // resources.=
-                let proxy_dst = proxy_dst(&dst, &p.uri);
+                let proxy_dst = unwrap_or_future!(proxy_dst(&dst, &p.uri));
                 Box::new(
                     self.connector
                         .connect(proxy_dst)
@@ -405,23 +411,19 @@ where
     }
 }
 
-fn proxy_dst(dst: &Destination, proxy: &Uri) -> Destination {
+fn proxy_dst(dst: &Destination, proxy: &Uri) -> io::Result<Destination> {
     let mut dst = dst.clone();
-    // FIXME: raw unwrap
     proxy
         .scheme_part()
-        .map(|s| dst.set_scheme(s.as_str()))
-        .unwrap_or(Ok(()))
-        .expect("");
+        .map(|s| dst.set_scheme(s.as_str()).map_err(io_err))
+        .unwrap_or_else(|| Err(io_err(format!("proxy uri missing scheme: {}", proxy))))?;
     proxy
         .host()
-        .map(|h| dst.set_host(h))
-        .unwrap_or(Ok(()))
-        .map_err(io_err)
-        .expect("");
+        .map(|h| dst.set_host(h).map_err(io_err))
+        .unwrap_or_else(|| Err(io_err(format!("proxy uri missing host: {}", proxy))))?;
     dst.set_port(proxy.port());
 
-    dst
+    Ok(dst)
 }
 
 #[inline]
