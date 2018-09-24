@@ -330,7 +330,7 @@ impl<C> ProxyConnector<C> {
     /// These headers must be appended to the hyper Request for the proxy to work properly.
     /// This is needed only for http requests.
     pub fn http_headers(&self, uri: &Uri) -> Option<&HeaderMap> {
-        if uri.scheme_part().map(|s| s.as_str()).unwrap_or("") != "http" {
+        if uri.scheme_part().map_or(true, |s| s.as_str() != "http") {
             return None;
         }
         self.match_proxy(uri).map(|p| &p.headers)
@@ -363,7 +363,7 @@ where
             if dst.scheme() == "https" {
                 let host = dst.host().to_owned();
                 let port = dst.port().unwrap_or(443);
-                let tunnel = tunnel::Tunnel::new(&host, port, &p.headers);
+                let tunnel = tunnel::new(&host, port, &p.headers);
 
                 let proxy_dst = unwrap_or_future!(proxy_dst(&dst, &p.uri));
                 let proxy_stream = self
@@ -391,7 +391,7 @@ where
             } else {
                 // without TLS, there is absolutely zero benefit from tunneling, as the proxy can
                 // read the plaintext traffic. Thus, tunneling is just restrictive to the proxies
-                // resources.=
+                // resources.
                 let proxy_dst = unwrap_or_future!(proxy_dst(&dst, &p.uri));
                 Box::new(
                     self.connector

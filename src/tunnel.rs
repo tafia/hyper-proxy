@@ -7,6 +7,22 @@ use std::fmt::{self, Display, Formatter};
 use std::io::{self, Cursor};
 use tokio_io::{AsyncRead, AsyncWrite};
 
+pub(crate) struct TunnelConnect {
+    buf: Vec<u8>,
+}
+
+impl TunnelConnect {
+    /// Change stream
+    pub fn with_stream<S>(self, stream: S, connected: Connected) -> Tunnel<S> {
+        Tunnel {
+            buf: self.buf.into_buf(),
+            stream: Some(stream),
+            connected: Some(connected),
+            state: TunnelState::Writing,
+        }
+    }
+}
+
 pub(crate) struct Tunnel<S> {
     buf: Cursor<Vec<u8>>,
     stream: Option<S>,
@@ -33,33 +49,19 @@ impl<'a> Display for HeadersDisplay<'a> {
     }
 }
 
-impl<S> Tunnel<S> {
-    /// Creates a new tunnel through proxy
-    pub fn new(host: &str, port: u16, headers: &HeaderMap) -> Tunnel<S> {
-        let buf = format!(
-            "CONNECT {0}:{1} HTTP/1.1\r\n\
-             Host: {0}:{1}\r\n\
-             {2}\
-             \r\n",
-            host,
-            port,
-            HeadersDisplay(headers)
-        ).into_bytes();
+/// Creates a new tunnel through proxy
+pub(crate) fn new(host: &str, port: u16, headers: &HeaderMap) -> TunnelConnect {
+    let buf = format!(
+        "CONNECT {0}:{1} HTTP/1.1\r\n\
+         Host: {0}:{1}\r\n\
+         {2}\
+         \r\n",
+        host,
+        port,
+        HeadersDisplay(headers)
+    ).into_bytes();
 
-        Tunnel {
-            buf: buf.into_buf(),
-            stream: None,
-            connected: None,
-            state: TunnelState::Writing,
-        }
-    }
-
-    /// Change stream
-    pub fn with_stream(mut self, stream: S, connected: Connected) -> Self {
-        self.stream = Some(stream);
-        self.connected = Some(connected);
-        self
-    }
+    TunnelConnect { buf }
 }
 
 impl<S: AsyncRead + AsyncWrite + 'static> Future for Tunnel<S> {
@@ -67,6 +69,10 @@ impl<S: AsyncRead + AsyncWrite + 'static> Future for Tunnel<S> {
     type Error = io::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        if self.stream.is_none() || self.connected.is_none() {
+            panic!("must not poll after future is complete")
+        }
+
         loop {
             if let TunnelState::Writing = self.state {
                 let n = try_ready!(self.stream.as_mut().unwrap().write_buf(&mut self.buf));
@@ -120,7 +126,7 @@ mod tests {
     use std::thread;
 
     fn tunnel<S>(conn: S, host: String, port: u16) -> Tunnel<S> {
-        Tunnel::new(&host, port, &HeaderMap::new()).with_stream(conn, Connected::new())
+        super::new(&host, port, &HeaderMap::new()).with_stream(conn, Connected::new())
     }
 
     #[cfg_attr(rustfmt, rustfmt_skip)]
