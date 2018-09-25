@@ -8,6 +8,9 @@
   - test: Adding missing tests
   - chore: Changes to the build process or auxiliary tools/libraries/documentation
 
+## 0.5.0
+- feat: upgrade to hyper 0.12
+
 ## 0.4.1
 - feat: make TLS support configurable
 
