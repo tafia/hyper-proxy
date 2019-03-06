@@ -21,6 +21,9 @@ bytes = "0.4.6"
 tokio-tls = { version = "0.2", optional=true }
 hyper-tls = { version = "0.3", optional=true }
 native-tls = { version = "0.2", optional=true }
+tokio-rustls = { version = "0.9", optional=true }
+hyper-rustls = { version = "0.16", optional=true }
+webpki = { version = "0.19", optional=true }
 typed-headers = "0.1"
 
 [dev-dependencies]
@@ -29,4 +32,5 @@ tokio-tcp = "0.1"
 
 [features]
 tls = ["tokio-tls", "hyper-tls", "native-tls"]
+rustls = ["tokio-rustls", "hyper-rustls", "webpki"]
 default = ["tls"]

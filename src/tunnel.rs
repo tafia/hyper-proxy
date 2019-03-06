@@ -59,7 +59,8 @@ pub(crate) fn new(host: &str, port: u16, headers: &HeaderMap) -> TunnelConnect {
         host,
         port,
         HeadersDisplay(headers)
-    ).into_bytes();
+    )
+    .into_bytes();
 
     TunnelConnect { buf }
 }
@@ -83,12 +84,11 @@ impl<S: AsyncRead + AsyncWrite + 'static> Future for Tunnel<S> {
                     return Err(io_err("unexpected EOF while tunnel writing"));
                 }
             } else {
-                let n = try_ready!(
-                    self.stream
-                        .as_mut()
-                        .unwrap()
-                        .read_buf(&mut self.buf.get_mut())
-                );
+                let n = try_ready!(self
+                    .stream
+                    .as_mut()
+                    .unwrap()
+                    .read_buf(&mut self.buf.get_mut()));
                 if n == 0 {
                     return Err(io_err("unexpected EOF while tunnel reading"));
                 } else {
