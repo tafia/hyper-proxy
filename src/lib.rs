@@ -397,7 +397,7 @@ where
                     self.connector
                         .connect(proxy_dst)
                         .map_err(io_err)
-                        .map(|(s, c)| (ProxyStream::Regular(s), c)),
+                        .map(|(s, c)| (ProxyStream::Regular(s), Connected::new().proxy(true))),
                 )
             }
         } else {
