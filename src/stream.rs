@@ -1,15 +1,22 @@
-use std::io::{self, Read, Write};
 use bytes::{Buf, BufMut};
 use futures::Poll;
+use std::io::{self, Read, Write};
 use tokio_io::{AsyncRead, AsyncWrite};
 
+#[cfg(feature = "rustls")]
+use tokio_rustls::rustls::ClientSession;
+#[cfg(feature = "rustls")]
+use tokio_rustls::TlsStream as RustlsStream;
 #[cfg(feature = "tls")]
 use tokio_tls::TlsStream;
+
+#[cfg(feature = "rustls")]
+type TlsStream<R> = RustlsStream<R, ClientSession>;
 
 /// A Proxy Stream wrapper
 pub enum ProxyStream<R> {
     Regular(R),
-    #[cfg(feature = "tls")]
+    #[cfg(any(feature = "tls", feature = "rustls"))]
     Secured(TlsStream<R>),
 }
 
@@ -17,7 +24,7 @@ macro_rules! match_fn {
     ($self:expr, $fn:ident $(,$buf:expr)*) => {
         match *$self {
             ProxyStream::Regular(ref mut s) => s.$fn($($buf)*),
-            #[cfg(feature = "tls")]
+            #[cfg(any(feature = "tls", feature = "rustls"))]
             ProxyStream::Secured(ref mut s) => s.$fn($($buf)*),
         }
     }
@@ -46,7 +53,7 @@ impl<R: AsyncRead + AsyncWrite> AsyncRead for ProxyStream<R> {
     unsafe fn prepare_uninitialized_buffer(&self, buf: &mut [u8]) -> bool {
         match *self {
             ProxyStream::Regular(ref s) => s.prepare_uninitialized_buffer(buf),
-            #[cfg(feature = "tls")]
+            #[cfg(any(feature = "tls", feature = "rustls"))]
             ProxyStream::Secured(ref s) => s.prepare_uninitialized_buffer(buf),
         }
     }

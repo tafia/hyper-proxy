@@ -18,7 +18,7 @@
 //!
 //! fn main() {
 //!     let mut core = Runtime::new().unwrap();
-//!     
+//!
 //!     let proxy = {
 //!         let proxy_uri = "http://my-proxy:8080".parse().unwrap();
 //!         let mut proxy = Proxy::new(Intercept::All, proxy_uri);
@@ -60,14 +60,21 @@ extern crate bytes;
 extern crate futures;
 extern crate http;
 extern crate hyper;
+#[cfg(feature = "rustls")]
+extern crate hyper_rustls;
 #[cfg(test)]
+#[cfg(feature = "tls")]
 extern crate hyper_tls;
 #[cfg(feature = "tls")]
 extern crate native_tls;
 extern crate tokio_io;
+#[cfg(feature = "rustls")]
+extern crate tokio_rustls;
 #[cfg(feature = "tls")]
 extern crate tokio_tls;
 extern crate typed_headers;
+#[cfg(feature = "rustls")]
+extern crate webpki;
 
 mod stream;
 mod tunnel;
@@ -82,9 +89,13 @@ use std::fmt;
 use std::io;
 use std::sync::Arc;
 use stream::ProxyStream;
+#[cfg(feature = "rustls")]
+use tokio_rustls::TlsConnector;
 #[cfg(feature = "tls")]
 use tokio_tls::TlsConnector;
 use typed_headers::{Authorization, Credentials, HeaderMapExt, ProxyAuthorization};
+#[cfg(feature = "rustls")]
+use webpki::DNSNameRef;
 
 /// The Intercept enum to filter connections
 #[derive(Debug, Clone)]
@@ -119,7 +130,7 @@ impl Dst for Uri {
         self.host()
     }
     fn port(&self) -> Option<u16> {
-        self.port()
+        self.port_u16()
     }
 }
 
@@ -237,7 +248,9 @@ pub struct ProxyConnector<C> {
     connector: C,
     #[cfg(feature = "tls")]
     tls: Option<NativeTlsConnector>,
-    #[cfg(not(feature = "tls"))]
+    #[cfg(feature = "rustls")]
+    tls: Option<TlsConnector>,
+    #[cfg(not(any(feature = "tls", feature = "rustls")))]
     tls: Option<()>,
 }
 
@@ -271,6 +284,18 @@ impl<C> ProxyConnector<C> {
         })
     }
 
+    /// Create a new secured Proxies
+    #[cfg(feature = "rustls")]
+    pub fn new(connector: C) -> Result<Self, io::Error> {
+        let cfg = Arc::new(tokio_rustls::rustls::ClientConfig::new());
+        let tls = TlsConnector::from(cfg);
+        Ok(ProxyConnector {
+            proxies: Vec::new(),
+            connector: connector,
+            tls: Some(tls),
+        })
+    }
+
     /// Create a new unsecured Proxy
     pub fn unsecured(connector: C) -> Self {
         ProxyConnector {
@@ -281,7 +306,7 @@ impl<C> ProxyConnector<C> {
     }
 
     /// Create a proxy connector and attach a particular proxy
-    #[cfg(feature = "tls")]
+    #[cfg(any(feature = "tls", feature = "rustls"))]
     pub fn from_proxy(connector: C, proxy: Proxy) -> Result<Self, io::Error> {
         let mut c = ProxyConnector::new(connector)?;
         c.proxies.push(proxy);
@@ -305,8 +330,14 @@ impl<C> ProxyConnector<C> {
     }
 
     /// Set or unset tls when tunneling
-    #[cfg(feature = "tls")]
+    #[cfg(any(feature = "tls"))]
     pub fn set_tls(&mut self, tls: Option<NativeTlsConnector>) {
+        self.tls = tls;
+    }
+
+    /// Set or unset tls when tunneling
+    #[cfg(any(feature = "rustls"))]
+    pub fn set_tls(&mut self, tls: Option<TlsConnector>) {
         self.tls = tls;
     }
 
@@ -380,10 +411,27 @@ where
                                 .and_then(move |(io, _)| {
                                     let tls = TlsConnector::from(tls);
                                     tls.connect(&host, io).map_err(io_err)
-                                }).map(|s| (ProxyStream::Secured(s), Connected::new().proxy(true))),
+                                })
+                                .map(|s| (ProxyStream::Secured(s), Connected::new().proxy(true))),
                         )
                     }
-                    #[cfg(not(feature = "tls"))]
+                    #[cfg(feature = "rustls")]
+                    Some(tls) => {
+                        let tls = tls.clone();
+                        let dnsref = unwrap_or_future!(DNSNameRef::try_from_ascii_str(&host)
+                            .map(|r| r.to_owned())
+                            .map_err(|()| io_err_from_str("invalid hostname")));
+
+                        Box::new(
+                            proxy_stream
+                                .and_then(move |(io, _)| {
+                                    let tls = TlsConnector::from(tls);
+                                    tls.connect(dnsref.as_ref(), io).map_err(io_err)
+                                })
+                                .map(|s| (ProxyStream::Secured(s), Connected::new().proxy(true))),
+                        )
+                    }
+                    #[cfg(not(any(feature = "tls", feature = "rustls")))]
                     Some(_) => panic!("hyper-proxy was not built with TLS support"),
 
                     None => Box::new(proxy_stream.map(|(s, c)| (ProxyStream::Regular(s), c))),
@@ -421,12 +469,17 @@ fn proxy_dst(dst: &Destination, proxy: &Uri) -> io::Result<Destination> {
         .host()
         .map(|h| dst.set_host(h).map_err(io_err))
         .unwrap_or_else(|| Err(io_err(format!("proxy uri missing host: {}", proxy))))?;
-    dst.set_port(proxy.port());
+    dst.set_port(proxy.port_u16());
 
     Ok(dst)
 }
 
 #[inline]
 fn io_err<E: Into<Box<::std::error::Error + Send + Sync>>>(e: E) -> io::Error {
+    io::Error::new(io::ErrorKind::Other, e)
+}
+
+#[inline]
+fn io_err_from_str(e: &str) -> io::Error {
     io::Error::new(io::ErrorKind::Other, e)
 }
