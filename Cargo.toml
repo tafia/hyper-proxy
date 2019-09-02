@@ -1,6 +1,6 @@
 [package]
 name = "hyper-proxy"
-version = "0.5.0"
+version = "0.5.1"
 authors = ["Johann Tuffe <tafia973@gmail.com>"]
 description = "A proxy connector for Hyper-based applications"
 
