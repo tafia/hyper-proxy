@@ -1,17 +1,20 @@
 use bytes::{Buf, BufMut};
-use futures::Poll;
-use std::io::{self, Read, Write};
-use tokio_io::{AsyncRead, AsyncWrite};
+use std::task::{Poll, Context};
+use std::io;
+use std::pin::Pin;
+use tokio::io::{AsyncRead, AsyncWrite};
+use std::mem::MaybeUninit;
 
 #[cfg(feature = "rustls")]
-use tokio_rustls::rustls::ClientSession;
-#[cfg(feature = "rustls")]
-use tokio_rustls::TlsStream as RustlsStream;
+use tokio_rustls::client::TlsStream as RustlsStream;
+
 #[cfg(feature = "tls")]
 use tokio_tls::TlsStream;
 
+use hyper::client::connect::{Connected, Connection};
+
 #[cfg(feature = "rustls")]
-type TlsStream<R> = RustlsStream<R, ClientSession>;
+type TlsStream<R> = RustlsStream<R>;
 
 /// A Proxy Stream wrapper
 pub enum ProxyStream<R> {
@@ -20,55 +23,92 @@ pub enum ProxyStream<R> {
     Secured(TlsStream<R>),
 }
 
-macro_rules! match_fn {
-    ($self:expr, $fn:ident $(,$buf:expr)*) => {
-        match *$self {
-            ProxyStream::Regular(ref mut s) => s.$fn($($buf)*),
+macro_rules! match_fn_pinned {
+    ($self:expr, $fn:ident, $ctx:expr, $buf:expr) => {
+        match $self.get_mut() {
+            ProxyStream::Regular(s) => Pin::new(s).$fn($ctx, $buf),
             #[cfg(any(feature = "tls", feature = "rustls"))]
-            ProxyStream::Secured(ref mut s) => s.$fn($($buf)*),
+            ProxyStream::Secured(s) => Pin::new(s).$fn($ctx, $buf),
+        }
+    };
+
+    ($self:expr, $fn:ident, $ctx:expr) => {
+        match $self.get_mut() {
+            ProxyStream::Regular(s) => Pin::new(s).$fn($ctx),
+            #[cfg(any(feature = "tls", feature = "rustls"))]
+            ProxyStream::Secured(s) => Pin::new(s).$fn($ctx),
         }
     }
 }
 
-impl<R: Read + Write> Read for ProxyStream<R> {
-    #[inline]
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        match_fn!(self, read, buf)
-    }
-}
-
-impl<R: Read + Write> Write for ProxyStream<R> {
-    #[inline]
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        match_fn!(self, write, buf)
-    }
-
-    #[inline]
-    fn flush(&mut self) -> io::Result<()> {
-        match_fn!(self, flush)
-    }
-}
-
-impl<R: AsyncRead + AsyncWrite> AsyncRead for ProxyStream<R> {
-    unsafe fn prepare_uninitialized_buffer(&self, buf: &mut [u8]) -> bool {
+impl<R: AsyncRead + AsyncWrite + Unpin> AsyncRead for ProxyStream<R> {
+    unsafe fn prepare_uninitialized_buffer(&self, buf: &mut [MaybeUninit<u8>]) -> bool {
         match *self {
             ProxyStream::Regular(ref s) => s.prepare_uninitialized_buffer(buf),
+
             #[cfg(any(feature = "tls", feature = "rustls"))]
             ProxyStream::Secured(ref s) => s.prepare_uninitialized_buffer(buf),
         }
     }
 
-    fn read_buf<B: BufMut>(&mut self, buf: &mut B) -> Poll<usize, io::Error> {
-        match_fn!(self, read_buf, buf)
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut [u8],
+    ) -> Poll<io::Result<usize>>
+    {
+        match_fn_pinned!(self, poll_read, cx, buf)
+    }
+
+    fn poll_read_buf<B: BufMut>(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut B,
+    ) -> Poll<io::Result<usize>>
+    where
+        Self: Sized,
+    {
+        match_fn_pinned!(self, poll_read_buf, cx, buf)
     }
 }
 
-impl<R: AsyncRead + AsyncWrite> AsyncWrite for ProxyStream<R> {
-    fn shutdown(&mut self) -> Poll<(), io::Error> {
-        match_fn!(self, shutdown)
+impl<R: AsyncRead + AsyncWrite + Unpin> AsyncWrite for ProxyStream<R> {
+    fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<io::Result<usize>> {
+        match_fn_pinned!(self, poll_write, cx, buf)
     }
 
-    fn write_buf<B: Buf>(&mut self, buf: &mut B) -> Poll<usize, io::Error> {
-        match_fn!(self, write_buf, buf)
+    fn poll_flush(
+        self: Pin<&mut Self>, 
+        cx: &mut Context<'_>,
+    ) -> Poll<io::Result<()>> {
+        match_fn_pinned!(self, poll_flush, cx)
+    }
+
+    fn poll_shutdown(
+        self: Pin<&mut Self>, 
+        cx: &mut Context<'_>,
+    ) -> Poll<io::Result<()>> {
+        match_fn_pinned!(self, poll_shutdown, cx)
+    }
+
+    fn poll_write_buf<B: Buf>(
+        self: Pin<&mut Self>, 
+        cx: &mut Context<'_>, 
+        buf: &mut B,
+    ) -> Poll<io::Result<usize>> {
+        match_fn_pinned!(self, poll_write_buf, cx, buf)
+    }
+}
+
+impl <R: AsyncRead + AsyncWrite + Connection + Unpin> Connection for ProxyStream<R> {
+    fn connected(&self) -> Connected {
+        match self {
+            ProxyStream::Regular(s) => s.connected(),
+            #[cfg(feature = "tls")]
+            ProxyStream::Secured(s) => s.get_ref().connected().proxy(true),
+
+            #[cfg(feature = "rustls")]
+            ProxyStream::Secured(s) => s.get_ref().0.connected().proxy(true),
+        }
     }
 }
