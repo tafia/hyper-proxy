@@ -8,6 +8,9 @@
   - test: Adding missing tests
   - chore: Changes to the build process or auxiliary tools/libraries/documentation
 
+## 0.6.0
+- feat: upgrade to hyper 0.13 and tokio 0.2
+
 ## 0.5.1
 - feat: add rustls feature
 

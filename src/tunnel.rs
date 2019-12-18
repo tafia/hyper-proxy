@@ -1,23 +1,21 @@
+use crate::io_err;
 use bytes::{buf::Buf, BytesMut};
 use http::HeaderMap;
 use std::fmt::{self, Display, Formatter};
-use std::io;
-use std::task::{Poll, Context};
-use std::pin::Pin;
 use std::future::Future;
+use std::io;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 use tokio::io::{AsyncRead, AsyncWrite};
-use crate::io_err;
 
 macro_rules! try_ready {
     ($x:expr) => {
         match $x {
             core::task::Poll::Ready(Ok(x)) => x,
-            core::task::Poll::Ready(Err(e)) =>
-                return core::task::Poll::Ready(Err(e.into())),
-            core::task::Poll::Pending =>
-                return core::task::Poll::Pending,
+            core::task::Poll::Ready(Err(e)) => return core::task::Poll::Ready(Err(e.into())),
+            core::task::Poll::Pending => return core::task::Poll::Pending,
         }
-    }
+    };
 }
 
 pub(crate) struct TunnelConnect {
@@ -73,7 +71,9 @@ pub(crate) fn new(host: &str, port: u16, headers: &HeaderMap) -> TunnelConnect {
     )
     .into_bytes();
 
-    TunnelConnect { buf: buf.as_slice().into() }
+    TunnelConnect {
+        buf: buf.as_slice().into(),
+    }
 }
 
 impl<S: AsyncRead + AsyncWrite + Unpin> Future for Tunnel<S> {
@@ -88,7 +88,9 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Future for Tunnel<S> {
 
         loop {
             if let TunnelState::Writing = &this.state {
-                let n = try_ready!(Pin::new(this.stream.as_mut().unwrap()).poll_write_buf(ctx, &mut this.buf));
+                let n = try_ready!(
+                    Pin::new(this.stream.as_mut().unwrap()).poll_write_buf(ctx, &mut this.buf)
+                );
 
                 if !this.buf.has_remaining() {
                     this.state = TunnelState::Reading;
@@ -97,9 +99,10 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Future for Tunnel<S> {
                     return Poll::Ready(Err(io_err("unexpected EOF while tunnel writing")));
                 }
             } else {
-                let n = try_ready!(Pin::new(this.stream.as_mut().unwrap())
-                    .poll_read_buf(ctx, &mut this.buf));
-                
+                let n = try_ready!(
+                    Pin::new(this.stream.as_mut().unwrap()).poll_read_buf(ctx, &mut this.buf)
+                );
+
                 if n == 0 {
                     return Poll::Ready(Err(io_err("unexpected EOF while tunnel reading")));
                 } else {
@@ -112,7 +115,10 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Future for Tunnel<S> {
                         // else read more
                         } else {
                             let len = read.len().min(16);
-                            return Poll::Ready(Err(io_err(format!("unsuccessful tunnel ({})", String::from_utf8_lossy(&read[0..len])))));
+                            return Poll::Ready(Err(io_err(format!(
+                                "unsuccessful tunnel ({})",
+                                String::from_utf8_lossy(&read[0..len])
+                            ))));
                         }
                     }
                 }
@@ -121,16 +127,15 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Future for Tunnel<S> {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
-    use tokio::runtime::Runtime;
-    use tokio::net::TcpStream;
     use super::{HeaderMap, Tunnel};
-    use futures::future::{TryFutureExt};
+    use futures::future::TryFutureExt;
     use std::io::{Read, Write};
     use std::net::TcpListener;
     use std::thread;
+    use tokio::net::TcpStream;
+    use tokio::runtime::Runtime;
 
     fn tunnel<S>(conn: S, host: String, port: u16) -> Tunnel<S> {
         super::new(&host, port, &HeaderMap::new()).with_stream(conn)
