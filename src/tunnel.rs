@@ -1,32 +1,43 @@
-use bytes::{BufMut, IntoBuf};
-use futures::{Async, Future, Poll};
+use bytes::{buf::Buf, BytesMut};
 use http::HeaderMap;
-use hyper::client::connect::Connected;
-use io_err;
 use std::fmt::{self, Display, Formatter};
-use std::io::{self, Cursor};
-use tokio_io::{AsyncRead, AsyncWrite};
+use std::io;
+use std::task::{Poll, Context};
+use std::pin::Pin;
+use std::future::Future;
+use tokio::io::{AsyncRead, AsyncWrite};
+use crate::io_err;
+
+macro_rules! try_ready {
+    ($x:expr) => {
+        match $x {
+            core::task::Poll::Ready(Ok(x)) => x,
+            core::task::Poll::Ready(Err(e)) =>
+                return core::task::Poll::Ready(Err(e.into())),
+            core::task::Poll::Pending =>
+                return core::task::Poll::Pending,
+        }
+    }
+}
 
 pub(crate) struct TunnelConnect {
-    buf: Vec<u8>,
+    buf: BytesMut,
 }
 
 impl TunnelConnect {
     /// Change stream
-    pub fn with_stream<S>(self, stream: S, connected: Connected) -> Tunnel<S> {
+    pub fn with_stream<S>(self, stream: S) -> Tunnel<S> {
         Tunnel {
-            buf: self.buf.into_buf(),
+            buf: self.buf,
             stream: Some(stream),
-            connected: Some(connected),
             state: TunnelState::Writing,
         }
     }
 }
 
 pub(crate) struct Tunnel<S> {
-    buf: Cursor<Vec<u8>>,
+    buf: BytesMut,
     stream: Option<S>,
-    connected: Option<Connected>,
     state: TunnelState,
 }
 
@@ -62,48 +73,46 @@ pub(crate) fn new(host: &str, port: u16, headers: &HeaderMap) -> TunnelConnect {
     )
     .into_bytes();
 
-    TunnelConnect { buf }
+    TunnelConnect { buf: buf.as_slice().into() }
 }
 
-impl<S: AsyncRead + AsyncWrite + 'static> Future for Tunnel<S> {
-    type Item = (S, Connected);
-    type Error = io::Error;
+impl<S: AsyncRead + AsyncWrite + Unpin> Future for Tunnel<S> {
+    type Output = Result<S, io::Error>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        if self.stream.is_none() || self.connected.is_none() {
+    fn poll(self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<Self::Output> {
+        if self.stream.is_none() {
             panic!("must not poll after future is complete")
         }
 
+        let this = self.get_mut();
+
         loop {
-            if let TunnelState::Writing = self.state {
-                let n = try_ready!(self.stream.as_mut().unwrap().write_buf(&mut self.buf));
-                if !self.buf.has_remaining_mut() {
-                    self.state = TunnelState::Reading;
-                    self.buf.get_mut().truncate(0);
+            if let TunnelState::Writing = &this.state {
+                let n = try_ready!(Pin::new(this.stream.as_mut().unwrap()).poll_write_buf(ctx, &mut this.buf));
+
+                if !this.buf.has_remaining() {
+                    this.state = TunnelState::Reading;
+                    this.buf.truncate(0);
                 } else if n == 0 {
-                    return Err(io_err("unexpected EOF while tunnel writing"));
+                    return Poll::Ready(Err(io_err("unexpected EOF while tunnel writing")));
                 }
             } else {
-                let n = try_ready!(self
-                    .stream
-                    .as_mut()
-                    .unwrap()
-                    .read_buf(&mut self.buf.get_mut()));
+                let n = try_ready!(Pin::new(this.stream.as_mut().unwrap())
+                    .poll_read_buf(ctx, &mut this.buf));
+                
                 if n == 0 {
-                    return Err(io_err("unexpected EOF while tunnel reading"));
+                    return Poll::Ready(Err(io_err("unexpected EOF while tunnel reading")));
                 } else {
-                    let read = &self.buf.get_ref()[..];
+                    let read = &this.buf[..];
                     if read.len() > 12 {
                         if read.starts_with(b"HTTP/1.1 200") || read.starts_with(b"HTTP/1.0 200") {
                             if read.ends_with(b"\r\n\r\n") {
-                                return Ok(Async::Ready((
-                                    self.stream.take().unwrap(),
-                                    self.connected.take().unwrap().proxy(true),
-                                )));
+                                return Poll::Ready(Ok(this.stream.take().unwrap()));
                             }
                         // else read more
                         } else {
-                            return Err(io_err("unsuccessful tunnel"));
+                            let len = read.len().min(16);
+                            return Poll::Ready(Err(io_err(format!("unsuccessful tunnel ({})", String::from_utf8_lossy(&read[0..len])))));
                         }
                     }
                 }
@@ -112,21 +121,19 @@ impl<S: AsyncRead + AsyncWrite + 'static> Future for Tunnel<S> {
     }
 }
 
+
 #[cfg(test)]
 mod tests {
-    extern crate tokio;
-    extern crate tokio_tcp;
-
-    use self::tokio::runtime::current_thread::Runtime;
-    use self::tokio_tcp::TcpStream;
-    use super::{Connected, HeaderMap, Tunnel};
-    use futures::Future;
+    use tokio::runtime::Runtime;
+    use tokio::net::TcpStream;
+    use super::{HeaderMap, Tunnel};
+    use futures::future::{TryFutureExt};
     use std::io::{Read, Write};
     use std::net::TcpListener;
     use std::thread;
 
     fn tunnel<S>(conn: S, host: String, port: u16) -> Tunnel<S> {
-        super::new(&host, port, &HeaderMap::new()).with_stream(conn, Connected::new())
+        super::new(&host, port, &HeaderMap::new()).with_stream(conn)
     }
 
     #[cfg_attr(rustfmt, rustfmt_skip)]
