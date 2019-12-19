@@ -16,6 +16,9 @@
 //!         let mut proxy = Proxy::new(Intercept::All, proxy_uri);
 //!         proxy.set_authorization(Credentials::basic("John Doe", "Agent1234").unwrap());
 //!         let connector = HttpConnector::new();
+//!         # #[cfg(not(any(feature = "tls", feature = "rustls")))]
+//!         # let proxy_connector = ProxyConnector::from_proxy_unsecured(connector, proxy);
+//!         # #[cfg(any(feature = "tls", feature = "rustls"))]
 //!         let proxy_connector = ProxyConnector::from_proxy(connector, proxy).unwrap();
 //!         proxy_connector
 //!     };
