@@ -390,50 +390,60 @@ where
     }
 
     fn call(&mut self, uri: Uri) -> Self::Future {
-        if let (Some(ref p), Some("https"), Some(host)) =
-            (self.match_proxy(&uri), uri.scheme_str(), uri.host())
-        {
-            let host = host.to_owned();
-            let port = uri.port_u16().unwrap_or(443);
-            let tunnel = tunnel::new(&host, port, &p.headers);
-            let connection =
-                proxy_dst(&uri, &p.uri).map(|proxy_url| self.connector.call(proxy_url));
-            let tls = self.tls.clone();
+        if let (Some(p), Some(host)) = (self.match_proxy(&uri), uri.host()) {
+            if uri.scheme() == Some(&http::uri::Scheme::HTTPS) {
+                let host = host.to_owned();
+                let port = uri.port_u16().unwrap_or(443);
+                let tunnel = tunnel::new(&host, port, &p.headers);
+                let connection =
+                    proxy_dst(&uri, &p.uri).map(|proxy_url| self.connector.call(proxy_url));
+                let tls = self.tls.clone();
 
-            Box::pin(async move {
-                loop {
-                    // this hack will gone once `try_blocks` will eventually stabilized
-                    let proxy_stream = mtry!(mtry!(connection).await.map_err(io_err));
-                    let tunnel_stream = mtry!(tunnel.with_stream(proxy_stream).await);
+                Box::pin(async move {
+                    loop {
+                        // this hack will gone once `try_blocks` will eventually stabilized
+                        let proxy_stream = mtry!(mtry!(connection).await.map_err(io_err));
+                        let tunnel_stream = mtry!(tunnel.with_stream(proxy_stream).await);
 
-                    break match tls {
-                        #[cfg(feature = "tls")]
-                        Some(tls) => {
-                            let tls = TlsConnector::from(tls);
-                            let secure_stream =
-                                mtry!(tls.connect(&host, tunnel_stream).await.map_err(io_err));
+                        break match tls {
+                            #[cfg(feature = "tls")]
+                            Some(tls) => {
+                                let tls = TlsConnector::from(tls);
+                                let secure_stream =
+                                    mtry!(tls.connect(&host, tunnel_stream).await.map_err(io_err));
 
-                            Ok(ProxyStream::Secured(secure_stream))
-                        }
+                                Ok(ProxyStream::Secured(secure_stream))
+                            }
 
-                        #[cfg(feature = "rustls")]
-                        Some(tls) => {
-                            let dnsref =
-                                mtry!(DNSNameRef::try_from_ascii_str(&host).map_err(io_err));
-                            let tls = TlsConnector::from(tls);
-                            let secure_stream =
-                                mtry!(tls.connect(dnsref, tunnel_stream).await.map_err(io_err));
+                            #[cfg(feature = "rustls")]
+                            Some(tls) => {
+                                let dnsref =
+                                    mtry!(DNSNameRef::try_from_ascii_str(&host).map_err(io_err));
+                                let tls = TlsConnector::from(tls);
+                                let secure_stream =
+                                    mtry!(tls.connect(dnsref, tunnel_stream).await.map_err(io_err));
 
-                            Ok(ProxyStream::Secured(secure_stream))
-                        }
+                                Ok(ProxyStream::Secured(secure_stream))
+                            }
 
-                        #[cfg(not(any(feature = "tls", feature = "rustls")))]
-                        Some(_) => panic!("hyper-proxy was not built with TLS support"),
+                            #[cfg(not(any(feature = "tls", feature = "rustls")))]
+                            Some(_) => panic!("hyper-proxy was not built with TLS support"),
 
-                        None => Ok(ProxyStream::Regular(tunnel_stream)),
-                    };
+                            None => Ok(ProxyStream::Regular(tunnel_stream)),
+                        };
+                    }
+                })
+            } else {
+                match proxy_dst(&uri, &p.uri) {
+                    Ok(proxy_uri) => Box::pin(
+                        self.connector
+                            .call(proxy_uri)
+                            .map_ok(ProxyStream::Regular)
+                            .map_err(|err| io_err(err.into())),
+                    ),
+                    Err(err) => Box::pin(futures::future::err(io_err(err))),
                 }
-            })
+            }
         } else {
             Box::pin(
                 self.connector
