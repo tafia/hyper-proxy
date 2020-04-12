@@ -100,7 +100,7 @@ impl<R: AsyncRead + AsyncWrite + Unpin> AsyncWrite for ProxyStream<R> {
 impl<R: AsyncRead + AsyncWrite + Connection + Unpin> Connection for ProxyStream<R> {
     fn connected(&self) -> Connected {
         match self {
-            ProxyStream::Regular(s) => s.connected(),
+            ProxyStream::Regular(s) => s.connected().proxy(true),
             #[cfg(feature = "tls")]
             ProxyStream::Secured(s) => s.get_ref().connected().proxy(true),
 
