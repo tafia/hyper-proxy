@@ -429,7 +429,7 @@ where
                             #[cfg(not(any(feature = "tls", feature = "rustls")))]
                             Some(_) => panic!("hyper-proxy was not built with TLS support"),
 
-                            None => Ok(ProxyStream::Regular(tunnel_stream)),
+                            None => Ok(ProxyStream::NoProxy(tunnel_stream)),
                         };
                     }
                 })
@@ -448,7 +448,7 @@ where
             Box::pin(
                 self.connector
                     .call(uri)
-                    .map_ok(ProxyStream::Regular)
+                    .map_ok(ProxyStream::NoProxy)
                     .map_err(|err| io_err(err.into())),
             )
         }

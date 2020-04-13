@@ -18,6 +18,7 @@ type TlsStream<R> = RustlsStream<R>;
 
 /// A Proxy Stream wrapper
 pub enum ProxyStream<R> {
+    NoProxy(R),
     Regular(R),
     #[cfg(any(feature = "tls", feature = "rustls"))]
     Secured(TlsStream<R>),
@@ -26,6 +27,7 @@ pub enum ProxyStream<R> {
 macro_rules! match_fn_pinned {
     ($self:expr, $fn:ident, $ctx:expr, $buf:expr) => {
         match $self.get_mut() {
+            ProxyStream::NoProxy(s) => Pin::new(s).$fn($ctx, $buf),
             ProxyStream::Regular(s) => Pin::new(s).$fn($ctx, $buf),
             #[cfg(any(feature = "tls", feature = "rustls"))]
             ProxyStream::Secured(s) => Pin::new(s).$fn($ctx, $buf),
@@ -34,6 +36,7 @@ macro_rules! match_fn_pinned {
 
     ($self:expr, $fn:ident, $ctx:expr) => {
         match $self.get_mut() {
+            ProxyStream::NoProxy(s) => Pin::new(s).$fn($ctx),
             ProxyStream::Regular(s) => Pin::new(s).$fn($ctx),
             #[cfg(any(feature = "tls", feature = "rustls"))]
             ProxyStream::Secured(s) => Pin::new(s).$fn($ctx),
@@ -44,6 +47,8 @@ macro_rules! match_fn_pinned {
 impl<R: AsyncRead + AsyncWrite + Unpin> AsyncRead for ProxyStream<R> {
     unsafe fn prepare_uninitialized_buffer(&self, buf: &mut [MaybeUninit<u8>]) -> bool {
         match *self {
+            ProxyStream::NoProxy(ref s) => s.prepare_uninitialized_buffer(buf),
+
             ProxyStream::Regular(ref s) => s.prepare_uninitialized_buffer(buf),
 
             #[cfg(any(feature = "tls", feature = "rustls"))]
@@ -100,6 +105,8 @@ impl<R: AsyncRead + AsyncWrite + Unpin> AsyncWrite for ProxyStream<R> {
 impl<R: AsyncRead + AsyncWrite + Connection + Unpin> Connection for ProxyStream<R> {
     fn connected(&self) -> Connected {
         match self {
+            ProxyStream::NoProxy(s) => s.connected(),
+
             ProxyStream::Regular(s) => s.connected().proxy(true),
             #[cfg(feature = "tls")]
             ProxyStream::Secured(s) => s.get_ref().connected().proxy(true),
