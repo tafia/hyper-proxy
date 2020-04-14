@@ -429,7 +429,7 @@ where
                             #[cfg(not(any(feature = "tls", feature = "rustls")))]
                             Some(_) => panic!("hyper-proxy was not built with TLS support"),
 
-                            None => Ok(ProxyStream::NoProxy(tunnel_stream)),
+                            None => Ok(ProxyStream::Regular(tunnel_stream)),
                         };
                     }
                 })
