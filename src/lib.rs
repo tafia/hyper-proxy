@@ -448,7 +448,7 @@ where
             Box::pin(
                 self.connector
                     .call(uri)
-                    .map_ok(ProxyStream::Regular)
+                    .map_ok(ProxyStream::NoProxy)
                     .map_err(|err| io_err(err.into())),
             )
         }
