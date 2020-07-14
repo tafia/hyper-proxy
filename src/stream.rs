@@ -5,7 +5,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use tokio::io::{AsyncRead, AsyncWrite};
 
-#[cfg(feature = "rustls")]
+#[cfg(feature = "rustls-base")]
 use tokio_rustls::client::TlsStream as RustlsStream;
 
 #[cfg(feature = "tls")]
@@ -13,14 +13,14 @@ use tokio_tls::TlsStream;
 
 use hyper::client::connect::{Connected, Connection};
 
-#[cfg(feature = "rustls")]
+#[cfg(feature = "rustls-base")]
 type TlsStream<R> = RustlsStream<R>;
 
 /// A Proxy Stream wrapper
 pub enum ProxyStream<R> {
     NoProxy(R),
     Regular(R),
-    #[cfg(any(feature = "tls", feature = "rustls"))]
+    #[cfg(any(feature = "tls", feature = "rustls-base"))]
     Secured(TlsStream<R>),
 }
 
@@ -29,7 +29,7 @@ macro_rules! match_fn_pinned {
         match $self.get_mut() {
             ProxyStream::NoProxy(s) => Pin::new(s).$fn($ctx, $buf),
             ProxyStream::Regular(s) => Pin::new(s).$fn($ctx, $buf),
-            #[cfg(any(feature = "tls", feature = "rustls"))]
+            #[cfg(any(feature = "tls", feature = "rustls-base"))]
             ProxyStream::Secured(s) => Pin::new(s).$fn($ctx, $buf),
         }
     };
@@ -38,7 +38,7 @@ macro_rules! match_fn_pinned {
         match $self.get_mut() {
             ProxyStream::NoProxy(s) => Pin::new(s).$fn($ctx),
             ProxyStream::Regular(s) => Pin::new(s).$fn($ctx),
-            #[cfg(any(feature = "tls", feature = "rustls"))]
+            #[cfg(any(feature = "tls", feature = "rustls-base"))]
             ProxyStream::Secured(s) => Pin::new(s).$fn($ctx),
         }
     };
@@ -51,7 +51,7 @@ impl<R: AsyncRead + AsyncWrite + Unpin> AsyncRead for ProxyStream<R> {
 
             ProxyStream::Regular(ref s) => s.prepare_uninitialized_buffer(buf),
 
-            #[cfg(any(feature = "tls", feature = "rustls"))]
+            #[cfg(any(feature = "tls", feature = "rustls-base"))]
             ProxyStream::Secured(ref s) => s.prepare_uninitialized_buffer(buf),
         }
     }
@@ -111,7 +111,7 @@ impl<R: AsyncRead + AsyncWrite + Connection + Unpin> Connection for ProxyStream<
             #[cfg(feature = "tls")]
             ProxyStream::Secured(s) => s.get_ref().connected().proxy(true),
 
-            #[cfg(feature = "rustls")]
+            #[cfg(feature = "rustls-base")]
             ProxyStream::Secured(s) => s.get_ref().0.connected().proxy(true),
         }
     }
