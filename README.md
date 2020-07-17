@@ -56,6 +56,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
 }
 ```
 
+## Features
+
+`hyper-proxy` exposes three main Cargo features, to configure which TLS implementation it uses to
+connect to a proxy. It can also be configured without TLS support, by compiling without default
+features entirely. The supported list of configurations is:
+
+1. No TLS support (`default-features = false`)
+2. TLS support via `native-tls` to link against the operating system's native TLS implementation
+   (default)
+3. TLS support via `rustls` (`default-features = false, features = ["rustls"]`)
+4. TLS support via `rustls`, using a statically-compiled set of CA certificates to bypass the
+   operating system's default store (`default-features = false, features = ["rustls-webpki"]`)
+
 ## Credits
 
 Large part of the code comes from [reqwest][2].
