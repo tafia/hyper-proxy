@@ -37,6 +37,8 @@ tokio = { version = "0.2.4", features = ["full"] }
 
 [features]
 tls = ["tokio-tls", "hyper-tls", "native-tls"]
+# note that `rustls-base` is not a valid feature on its own - it will configure rustls without root
+# certificates!
 rustls-base = ["tokio-rustls", "hyper-rustls", "webpki"]
 rustls = ["rustls-base", "rustls-native-certs"]
 rustls-webpki = ["rustls-base", "webpki-roots"]
