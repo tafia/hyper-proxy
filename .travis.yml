@@ -15,4 +15,5 @@ script:
   - if [[ $(rustup show active-toolchain) == stable* ]]; then cargo fmt -- --check; fi;
   - cargo test --features tls
   - cargo test --features rustls --no-default-features
+  - cargo test --features rustls-webpki --no-default-features
   - cargo test --no-default-features

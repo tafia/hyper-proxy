@@ -16,9 +16,9 @@
 //!         let mut proxy = Proxy::new(Intercept::All, proxy_uri);
 //!         proxy.set_authorization(Credentials::basic("John Doe", "Agent1234").unwrap());
 //!         let connector = HttpConnector::new();
-//!         # #[cfg(not(any(feature = "tls", feature = "rustls")))]
+//!         # #[cfg(not(any(feature = "tls", feature = "rustls-base")))]
 //!         # let proxy_connector = ProxyConnector::from_proxy_unsecured(connector, proxy);
-//!         # #[cfg(any(feature = "tls", feature = "rustls"))]
+//!         # #[cfg(any(feature = "tls", feature = "rustls-base"))]
 //!         let proxy_connector = ProxyConnector::from_proxy(connector, proxy).unwrap();
 //!         proxy_connector
 //!     };
@@ -71,12 +71,12 @@ use tokio::io::{AsyncRead, AsyncWrite};
 #[cfg(feature = "tls")]
 use native_tls::TlsConnector as NativeTlsConnector;
 
-#[cfg(feature = "rustls")]
+#[cfg(feature = "rustls-base")]
 use tokio_rustls::TlsConnector;
 #[cfg(feature = "tls")]
 use tokio_tls::TlsConnector;
 use typed_headers::{Authorization, Credentials, HeaderMapExt, ProxyAuthorization};
-#[cfg(feature = "rustls")]
+#[cfg(feature = "rustls-base")]
 use webpki::DNSNameRef;
 
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
@@ -229,10 +229,10 @@ pub struct ProxyConnector<C> {
     #[cfg(feature = "tls")]
     tls: Option<NativeTlsConnector>,
 
-    #[cfg(feature = "rustls")]
+    #[cfg(feature = "rustls-base")]
     tls: Option<TlsConnector>,
 
-    #[cfg(not(any(feature = "tls", feature = "rustls")))]
+    #[cfg(not(any(feature = "tls", feature = "rustls-base")))]
     tls: Option<()>,
 }
 
@@ -268,11 +268,21 @@ impl<C> ProxyConnector<C> {
     }
 
     /// Create a new secured Proxies
-    #[cfg(feature = "rustls")]
+    #[cfg(feature = "rustls-base")]
     pub fn new(connector: C) -> Result<Self, io::Error> {
         let mut config = tokio_rustls::rustls::ClientConfig::new();
 
-        config.root_store = rustls_native_certs::load_native_certs()?;
+        #[cfg(feature = "rustls")]
+        {
+            config.root_store = rustls_native_certs::load_native_certs()?;
+        }
+
+        #[cfg(feature = "rustls-webpki")]
+        {
+            config
+                .root_store
+                .add_server_trust_anchors(&webpki_roots::TLS_SERVER_ROOTS);
+        }
 
         let cfg = Arc::new(config);
         let tls = TlsConnector::from(cfg);
@@ -294,7 +304,7 @@ impl<C> ProxyConnector<C> {
     }
 
     /// Create a proxy connector and attach a particular proxy
-    #[cfg(any(feature = "tls", feature = "rustls"))]
+    #[cfg(any(feature = "tls", feature = "rustls-base"))]
     pub fn from_proxy(connector: C, proxy: Proxy) -> Result<Self, io::Error> {
         let mut c = ProxyConnector::new(connector)?;
         c.proxies.push(proxy);
@@ -324,7 +334,7 @@ impl<C> ProxyConnector<C> {
     }
 
     /// Set or unset tls when tunneling
-    #[cfg(any(feature = "rustls"))]
+    #[cfg(any(feature = "rustls-base"))]
     pub fn set_tls(&mut self, tls: Option<TlsConnector>) {
         self.tls = tls;
     }
@@ -415,7 +425,7 @@ where
                                 Ok(ProxyStream::Secured(secure_stream))
                             }
 
-                            #[cfg(feature = "rustls")]
+                            #[cfg(feature = "rustls-base")]
                             Some(tls) => {
                                 let dnsref =
                                     mtry!(DNSNameRef::try_from_ascii_str(&host).map_err(io_err));
@@ -426,7 +436,7 @@ where
                                 Ok(ProxyStream::Secured(secure_stream))
                             }
 
-                            #[cfg(not(any(feature = "tls", feature = "rustls")))]
+                            #[cfg(not(any(feature = "tls", feature = "rustls-base")))]
                             Some(_) => panic!("hyper-proxy was not built with TLS support"),
 
                             None => Ok(ProxyStream::Regular(tunnel_stream)),
