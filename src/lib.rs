@@ -168,6 +168,7 @@ impl<F: Fn(Option<&str>, Option<&str>, Option<u16>) -> bool + Send + Sync + 'sta
 #[derive(Clone, Debug)]
 pub struct Proxy {
     intercept: Intercept,
+    force_connect: bool,
     headers: HeaderMap,
     uri: Uri,
 }
@@ -179,6 +180,7 @@ impl Proxy {
             intercept: intercept.into(),
             uri: uri,
             headers: HeaderMap::new(),
+            force_connect: false
         }
     }
 
@@ -197,6 +199,11 @@ impl Proxy {
                 self.headers.typed_insert(&ProxyAuthorization(credentials));
             }
         }
+    }
+
+    /// Forces the use of the CONNECT method.
+    pub fn force_connect(&mut self) {
+        self.force_connect = true;
     }
 
     /// Set a custom header
@@ -401,13 +408,17 @@ where
 
     fn call(&mut self, uri: Uri) -> Self::Future {
         if let (Some(p), Some(host)) = (self.match_proxy(&uri), uri.host()) {
-            if uri.scheme() == Some(&http::uri::Scheme::HTTPS) {
+            if uri.scheme() == Some(&http::uri::Scheme::HTTPS) || p.force_connect {
                 let host = host.to_owned();
                 let port = uri.port_u16().unwrap_or(443);
                 let tunnel = tunnel::new(&host, port, &p.headers);
                 let connection =
                     proxy_dst(&uri, &p.uri).map(|proxy_url| self.connector.call(proxy_url));
-                let tls = self.tls.clone();
+                let tls = if uri.scheme() == Some(&http::uri::Scheme::HTTPS) {
+                    self.tls.clone()
+                } else {
+                    None
+                };
 
                 Box::pin(async move {
                     loop {
