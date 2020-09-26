@@ -281,7 +281,8 @@ impl<C> ProxyConnector<C> {
 
         #[cfg(feature = "rustls")]
         {
-            config.root_store = rustls_native_certs::load_native_certs()?;
+            config.root_store =
+                rustls_native_certs::load_native_certs().map_err(|(_store, io)| io)?;
         }
 
         #[cfg(feature = "rustls-webpki")]

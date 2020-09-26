@@ -8,6 +8,10 @@
   - test: Adding missing tests
   - chore: Changes to the build process or auxiliary tools/libraries/documentation
 
+## 0.8.0
+- feat: add rustls-webpki feature (see #16)
+- feat: add ability to force use CONNECT method for HTTP/2.0
+
 ## 0.7.0
 - fix: plain http connection not proxied
 
