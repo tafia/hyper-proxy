@@ -180,7 +180,7 @@ impl Proxy {
             intercept: intercept.into(),
             uri: uri,
             headers: HeaderMap::new(),
-            force_connect: false
+            force_connect: false,
         }
     }
 
