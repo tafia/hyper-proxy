@@ -2,12 +2,13 @@
 //!
 //! # Example
 //! ```rust,no_run
-//! use hyper::{Client, Request, Uri};
+//! use hyper::{Client, Request, Uri, body::HttpBody};
 //! use hyper::client::HttpConnector;
 //! use futures::{TryFutureExt, TryStreamExt};
 //! use hyper_proxy::{Proxy, ProxyConnector, Intercept};
 //! use typed_headers::Credentials;
 //! use std::error::Error;
+//! use tokio::io::{stdout, AsyncWriteExt as _};
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn Error>> {
@@ -33,18 +34,19 @@
 //!     }
 //!
 //!     let client = Client::builder().build(proxy);
-//!     let fut_http = client.request(req)
-//!         .and_then(|res| res.into_body().map_ok(|x|x.to_vec()).try_concat())
-//!         .map_ok(move |body| ::std::str::from_utf8(&body).unwrap().to_string());
+//!     let mut resp = client.request(req).await?;
+//!     println!("Response: {}", resp.status());
+//!     while let Some(chunk) = resp.body_mut().data().await {
+//!         stdout().write_all(&chunk?).await?;
+//!     }
 //!
 //!     // Connecting to an https uri is straightforward (uses 'CONNECT' method underneath)
 //!     let uri = "https://my-remote-websitei-secured.com".parse().unwrap();
-//!     let fut_https = client.get(uri)
-//!         .and_then(|res| res.into_body().map_ok(|x|x.to_vec()).try_concat())
-//!         .map_ok(move |body| ::std::str::from_utf8(&body).unwrap().to_string());
-//!
-//!     let (http_res, https_res) = futures::future::join(fut_http, fut_https).await;
-//!     let (_, _) = (http_res?, https_res?);
+//!     let mut resp = client.get(uri).await?;
+//!     println!("Response: {}", resp.status());
+//!     while let Some(chunk) = resp.body_mut().data().await {
+//!         stdout().write_all(&chunk?).await?;
+//!     }
 //!
 //!     Ok(())
 //! }
@@ -71,10 +73,10 @@ use tokio::io::{AsyncRead, AsyncWrite};
 #[cfg(feature = "tls")]
 use native_tls::TlsConnector as NativeTlsConnector;
 
+#[cfg(feature = "tls")]
+use tokio_native_tls::TlsConnector;
 #[cfg(feature = "rustls-base")]
 use tokio_rustls::TlsConnector;
-#[cfg(feature = "tls")]
-use tokio_tls::TlsConnector;
 use typed_headers::{Authorization, Credentials, HeaderMapExt, ProxyAuthorization};
 #[cfg(feature = "rustls-base")]
 use webpki::DNSNameRef;

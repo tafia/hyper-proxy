@@ -6,7 +6,7 @@ use std::future::Future;
 use std::io;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 macro_rules! try_ready {
     ($x:expr) => {
@@ -88,9 +88,9 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Future for Tunnel<S> {
 
         loop {
             if let TunnelState::Writing = &this.state {
-                let n = try_ready!(
-                    Pin::new(this.stream.as_mut().unwrap()).poll_write_buf(ctx, &mut this.buf)
-                );
+                let fut = this.stream.as_mut().unwrap().write_buf(&mut this.buf);
+                futures::pin_mut!(fut);
+                let n = try_ready!(fut.poll(ctx));
 
                 if !this.buf.has_remaining() {
                     this.state = TunnelState::Reading;
@@ -99,9 +99,9 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Future for Tunnel<S> {
                     return Poll::Ready(Err(io_err("unexpected EOF while tunnel writing")));
                 }
             } else {
-                let n = try_ready!(
-                    Pin::new(this.stream.as_mut().unwrap()).poll_read_buf(ctx, &mut this.buf)
-                );
+                let fut = this.stream.as_mut().unwrap().read_buf(&mut this.buf);
+                futures::pin_mut!(fut);
+                let n = try_ready!(fut.poll(ctx));
 
                 if n == 0 {
                     return Poll::Ready(Err(io_err("unexpected EOF while tunnel reading")));
