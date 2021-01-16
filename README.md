@@ -15,7 +15,7 @@ use hyper::{Client, Request, Uri};
 use hyper::client::HttpConnector;
 use futures::{TryFutureExt, TryStreamExt};
 use hyper_proxy::{Proxy, ProxyConnector, Intercept};
-use typed_headers::Credentials;
+use headers::Authorization;
 use std::error::Error;
 
 #[tokio::main]
@@ -23,7 +23,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let proxy = {
         let proxy_uri = "http://my-proxy:8080".parse().unwrap();
         let mut proxy = Proxy::new(Intercept::All, proxy_uri);
-        proxy.set_authorization(Credentials::basic("John Doe", "Agent1234").unwrap());
+        proxy.set_authorization(Authorization::basic("John Doe", "Agent1234"));
         let connector = HttpConnector::new();
         let proxy_connector = ProxyConnector::from_proxy(connector, proxy).unwrap();
         proxy_connector

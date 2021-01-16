@@ -6,7 +6,7 @@
 //! use hyper::client::HttpConnector;
 //! use futures::{TryFutureExt, TryStreamExt};
 //! use hyper_proxy::{Proxy, ProxyConnector, Intercept};
-//! use typed_headers::Credentials;
+//! use headers::Authorization;
 //! use std::error::Error;
 //! use tokio::io::{stdout, AsyncWriteExt as _};
 //!
@@ -15,7 +15,7 @@
 //!     let proxy = {
 //!         let proxy_uri = "http://my-proxy:8080".parse().unwrap();
 //!         let mut proxy = Proxy::new(Intercept::All, proxy_uri);
-//!         proxy.set_authorization(Credentials::basic("John Doe", "Agent1234").unwrap());
+//!         proxy.set_authorization(Authorization::basic("John Doe", "Agent1234"));
 //!         let connector = HttpConnector::new();
 //!         # #[cfg(not(any(feature = "tls", feature = "rustls-base")))]
 //!         # let proxy_connector = ProxyConnector::from_proxy_unsecured(connector, proxy);
@@ -77,7 +77,7 @@ use native_tls::TlsConnector as NativeTlsConnector;
 use tokio_native_tls::TlsConnector;
 #[cfg(feature = "rustls-base")]
 use tokio_rustls::TlsConnector;
-use typed_headers::{Authorization, Credentials, HeaderMapExt, ProxyAuthorization};
+use headers::{Authorization, authorization::Credentials, HeaderMapExt, ProxyAuthorization};
 #[cfg(feature = "rustls-base")]
 use webpki::DNSNameRef;
 
@@ -187,18 +187,18 @@ impl Proxy {
     }
 
     /// Set `Proxy` authorization
-    pub fn set_authorization(&mut self, credentials: Credentials) {
+    pub fn set_authorization<C: Credentials + Clone>(&mut self, credentials: Authorization::<C>) {
         match self.intercept {
             Intercept::Http => {
-                self.headers.typed_insert(&Authorization(credentials));
+                self.headers.typed_insert(Authorization(credentials.0));
             }
             Intercept::Https => {
-                self.headers.typed_insert(&ProxyAuthorization(credentials));
+                self.headers.typed_insert(ProxyAuthorization(credentials.0));
             }
             _ => {
                 self.headers
-                    .typed_insert(&Authorization(credentials.clone()));
-                self.headers.typed_insert(&ProxyAuthorization(credentials));
+                    .typed_insert(Authorization(credentials.0.clone()));
+                self.headers.typed_insert(ProxyAuthorization(credentials.0));
             }
         }
     }

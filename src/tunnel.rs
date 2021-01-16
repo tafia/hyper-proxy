@@ -180,7 +180,7 @@ mod tests {
     fn test_tunnel() {
         let addr = mock_tunnel!();
 
-        let mut core = Runtime::new().unwrap();
+        let core = Runtime::new().unwrap();
         let work = TcpStream::connect(&addr);
         let host = addr.ip().to_string();
         let port = addr.port();
@@ -193,7 +193,7 @@ mod tests {
     fn test_tunnel_eof() {
         let addr = mock_tunnel!(b"HTTP/1.1 200 OK");
 
-        let mut core = Runtime::new().unwrap();
+        let core = Runtime::new().unwrap();
         let work = TcpStream::connect(&addr);
         let host = addr.ip().to_string();
         let port = addr.port();
@@ -206,7 +206,7 @@ mod tests {
     fn test_tunnel_bad_response() {
         let addr = mock_tunnel!(b"foo bar baz hallo");
 
-        let mut core = Runtime::new().unwrap();
+        let core = Runtime::new().unwrap();
         let work = TcpStream::connect(&addr);
         let host = addr.ip().to_string();
         let port = addr.port();
