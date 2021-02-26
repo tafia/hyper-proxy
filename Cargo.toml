@@ -41,6 +41,6 @@ tls = ["tokio-native-tls", "hyper-tls", "native-tls"]
 # note that `rustls-base` is not a valid feature on its own - it will configure rustls without root
 # certificates!
 rustls-base = ["tokio-rustls", "hyper-rustls", "webpki"]
-rustls = ["rustls-base", "rustls-native-certs"]
-rustls-webpki = ["rustls-base", "webpki-roots"]
+rustls = ["rustls-base", "rustls-native-certs", "hyper-rustls/native-tokio"]
+rustls-webpki = ["rustls-base", "webpki-roots", "hyper-rustls/webpki-tokio"]
 default = ["tls"]
