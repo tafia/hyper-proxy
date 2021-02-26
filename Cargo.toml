@@ -14,29 +14,30 @@ license = "MIT"
 edition = "2018"
 
 [dependencies]
-tokio = { version = "0.2.22", features = ["io-std"] }
-hyper = { version = "0.13" }
+tokio = { version = "1.0", features = ["io-std"] }
+hyper = { version = "0.14" }
 
 tower-service = "0.3"
 http = "0.2"
 futures = "0.3"
-bytes = "0.5"
-hyper-tls = { optional = true, version = "0.4.3" }
-tokio-tls = { version = "0.3", optional=true }
+bytes = "1.0"
+hyper-tls = { version = "0.5.0", optional = true }
+tokio-native-tls = { version = "0.3.0", optional=true }
 native-tls = { version = "0.2", optional=true }
-tokio-rustls = { version = "0.14", optional=true }
-hyper-rustls = { version="0.22.1", default-features = false, optional=true }
+tokio-rustls = { version = "0.22", optional=true }
+hyper-rustls = { version = "0.22", optional = true }
 
 webpki = { version = "0.21", optional = true }
-rustls-native-certs = { version = "0.4.0", optional = true }
-webpki-roots = { version = "0.20.0", optional = true }
-typed-headers = "0.2"
+rustls-native-certs = { version = "0.5.0", optional = true }
+webpki-roots = { version = "0.21.0", optional = true }
+headers = "0.3"
 
 [dev-dependencies]
-tokio = { version = "0.2.22", features = ["full"] }
+tokio = { version = "1", features = ["full"] }
+hyper = { version = "0.14", features = ["client", "http1"] }
 
 [features]
-tls = ["tokio-tls", "hyper-tls", "native-tls"]
+tls = ["tokio-native-tls", "hyper-tls", "native-tls"]
 # note that `rustls-base` is not a valid feature on its own - it will configure rustls without root
 # certificates!
 rustls-base = ["tokio-rustls", "hyper-rustls", "webpki"]
