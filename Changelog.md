@@ -8,6 +8,10 @@
   - test: Adding missing tests
   - chore: Changes to the build process or auxiliary tools/libraries/documentation
 
+## 0.9.0
+- feat: upgrade to tokio 1.0
+- feat: add tokio-openssl support
+
 ## 0.8.0
 - feat: add rustls-webpki feature (see #16)
 - feat: add ability to force use CONNECT method for HTTP/2.0
