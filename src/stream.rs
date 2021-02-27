@@ -79,6 +79,7 @@ impl<R: AsyncRead + AsyncWrite + Unpin> AsyncWrite for ProxyStream<R> {
         match self {
             ProxyStream::NoProxy(s) => s.is_write_vectored(),
             ProxyStream::Regular(s) => s.is_write_vectored(),
+            #[cfg(any(feature = "tls", feature = "rustls-base", feature = "openssl-tls"))]
             ProxyStream::Secured(s) => s.is_write_vectored(),
         }
     }

@@ -36,7 +36,7 @@ headers = "0.3"
 
 [dev-dependencies]
 tokio = { version = "1.0", features = ["full"] }
-hyper = { version = "0.14", features = ["client", "http1"] }
+hyper = { version = "0.14", features = ["client", "http1", "tcp"] }
 
 [features]
 openssl-tls = ["openssl", "tokio-openssl"]
