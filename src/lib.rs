@@ -4,7 +4,7 @@
 //! ```rust,no_run
 //! use hyper::{Client, Request, Uri, body::HttpBody};
 //! use hyper::client::HttpConnector;
-//! use futures::{TryFutureExt, TryStreamExt};
+//! use futures_util::{TryFutureExt, TryStreamExt};
 //! use hyper_proxy::{Proxy, ProxyConnector, Intercept};
 //! use headers::Authorization;
 //! use std::error::Error;
@@ -60,7 +60,7 @@ mod tunnel;
 use http::header::{HeaderMap, HeaderName, HeaderValue};
 use hyper::{service::Service, Uri};
 
-use futures::future::TryFutureExt;
+use futures_util::future::TryFutureExt;
 use std::{fmt, io, sync::Arc};
 use std::{
     future::Future,
@@ -509,7 +509,7 @@ where
                             .map_ok(ProxyStream::Regular)
                             .map_err(|err| io_err(err.into())),
                     ),
-                    Err(err) => Box::pin(futures::future::err(io_err(err))),
+                    Err(err) => Box::pin(futures_util::future::err(io_err(err))),
                 }
             }
         } else {
