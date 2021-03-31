@@ -89,7 +89,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Future for Tunnel<S> {
         loop {
             if let TunnelState::Writing = &this.state {
                 let fut = this.stream.as_mut().unwrap().write_buf(&mut this.buf);
-                futures::pin_mut!(fut);
+                futures_util::pin_mut!(fut);
                 let n = try_ready!(fut.poll(ctx));
 
                 if !this.buf.has_remaining() {
@@ -100,7 +100,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Future for Tunnel<S> {
                 }
             } else {
                 let fut = this.stream.as_mut().unwrap().read_buf(&mut this.buf);
-                futures::pin_mut!(fut);
+                futures_util::pin_mut!(fut);
                 let n = try_ready!(fut.poll(ctx));
 
                 if n == 0 {
@@ -130,7 +130,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Future for Tunnel<S> {
 #[cfg(test)]
 mod tests {
     use super::{HeaderMap, Tunnel};
-    use futures::future::TryFutureExt;
+    use futures_util::future::TryFutureExt;
     use std::io::{Read, Write};
     use std::net::TcpListener;
     use std::thread;
