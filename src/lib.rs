@@ -442,7 +442,7 @@ where
         if let (Some(p), Some(host)) = (self.match_proxy(&uri), uri.host()) {
             if uri.scheme() == Some(&http::uri::Scheme::HTTPS) || p.force_connect {
                 let host = host.to_owned();
-                let port = uri.port_u16().unwrap_or(443);
+                let port = uri.port_u16().unwrap_or(if uri.scheme() == Some(&http::uri::Scheme::HTTP) { 80 } else { 443 });
                 let tunnel = tunnel::new(&host, port, &p.headers);
                 let connection =
                     proxy_dst(&uri, &p.uri).map(|proxy_url| self.connector.call(proxy_url));
