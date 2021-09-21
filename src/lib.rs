@@ -172,7 +172,7 @@ impl<F: Fn(Option<&str>, Option<&str>, Option<u16>) -> bool + Send + Sync + 'sta
     }
 }
 
-/// A Proxy strcut
+/// A Proxy struct
 #[derive(Clone, Debug)]
 pub struct Proxy {
     intercept: Intercept,
