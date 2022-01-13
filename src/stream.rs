@@ -21,6 +21,7 @@ pub type TlsStream<R> = RustlsStream<R>;
 pub type TlsStream<R> = OpenSslStream<R>;
 
 /// A Proxy Stream wrapper
+#[derive(Debug)]
 pub enum ProxyStream<R> {
     NoProxy(R),
     Regular(R),
