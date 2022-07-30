@@ -95,18 +95,37 @@ impl<R: AsyncRead + AsyncWrite + Unpin> AsyncWrite for ProxyStream<R> {
 
 impl<R: AsyncRead + AsyncWrite + Connection + Unpin> Connection for ProxyStream<R> {
     fn connected(&self) -> Connected {
-        match self {
+        let mut is_h2 = false;
+
+        let connected = match self {
             ProxyStream::NoProxy(s) => s.connected(),
 
             ProxyStream::Regular(s) => s.connected().proxy(true),
             #[cfg(feature = "tls")]
-            ProxyStream::Secured(s) => s.get_ref().get_ref().get_ref().connected().proxy(true),
+            ProxyStream::Secured(s) => {
+                let stream = s.get_ref();
+                is_h2 = stream.negotiated_alpn().ok().flatten().as_deref() == Some(b"h2");
+                stream.get_ref().get_ref().connected().proxy(true)
+            }
 
             #[cfg(feature = "rustls-base")]
-            ProxyStream::Secured(s) => s.get_ref().0.connected().proxy(true),
+            ProxyStream::Secured(s) => {
+                let (underlying, tls) = s.get_ref();
+                is_h2 = tls.alpn_protocol() == Some(b"h2");
+                underlying.connected().proxy(true)
+            }
 
             #[cfg(feature = "openssl-tls")]
-            ProxyStream::Secured(s) => s.get_ref().connected().proxy(true),
+            ProxyStream::Secured(s) => {
+                is_h2 = s.ssl().selected_alpn_protocol() == Some(b"h2");
+                s.get_ref().connected().proxy(true)
+            }
+        };
+
+        if is_h2 {
+            connected.negotiated_h2()
+        } else {
+            connected
         }
     }
 }
