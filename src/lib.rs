@@ -61,6 +61,8 @@ use http::header::{HeaderMap, HeaderName, HeaderValue};
 use hyper::{service::Service, Uri};
 
 use futures_util::future::TryFutureExt;
+#[cfg(feature = "rustls-base")]
+use std::convert::TryFrom;
 use std::{fmt, io, sync::Arc};
 use std::{
     future::Future,
@@ -77,15 +79,13 @@ use native_tls::TlsConnector as NativeTlsConnector;
 #[cfg(feature = "tls")]
 use tokio_native_tls::TlsConnector;
 #[cfg(feature = "rustls-base")]
-use tokio_rustls::TlsConnector;
+use tokio_rustls::{rustls::ServerName, TlsConnector};
 
 use headers::{authorization::Credentials, Authorization, HeaderMapExt, ProxyAuthorization};
 #[cfg(feature = "openssl-tls")]
 use openssl::ssl::{SslConnector as OpenSslConnector, SslMethod};
 #[cfg(feature = "openssl-tls")]
 use tokio_openssl::SslStream;
-#[cfg(feature = "rustls-base")]
-use webpki::DNSNameRef;
 
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
@@ -288,20 +288,27 @@ impl<C> ProxyConnector<C> {
     /// Create a new secured Proxies
     #[cfg(feature = "rustls-base")]
     pub fn new(connector: C) -> Result<Self, io::Error> {
-        let mut config = tokio_rustls::rustls::ClientConfig::new();
-
+        let mut roots = tokio_rustls::rustls::RootCertStore::empty();
         #[cfg(feature = "rustls")]
-        {
-            config.root_store =
-                rustls_native_certs::load_native_certs().map_err(|(_store, io)| io)?;
+        for cert in rustls_native_certs::load_native_certs()? {
+            roots
+                .add(&tokio_rustls::rustls::Certificate(cert.0))
+                .map_err(io_err)?;
         }
 
         #[cfg(feature = "rustls-webpki")]
-        {
-            config
-                .root_store
-                .add_server_trust_anchors(&webpki_roots::TLS_SERVER_ROOTS);
-        }
+        roots.add_server_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.0.iter().map(|ta| {
+            tokio_rustls::rustls::OwnedTrustAnchor::from_subject_spki_name_constraints(
+                ta.subject,
+                ta.spki,
+                ta.name_constraints,
+            )
+        }));
+
+        let config = tokio_rustls::rustls::ClientConfig::builder()
+            .with_safe_defaults()
+            .with_root_certificates(roots)
+            .with_no_client_auth();
 
         let cfg = Arc::new(config);
         let tls = TlsConnector::from(cfg);
@@ -442,7 +449,13 @@ where
         if let (Some(p), Some(host)) = (self.match_proxy(&uri), uri.host()) {
             if uri.scheme() == Some(&http::uri::Scheme::HTTPS) || p.force_connect {
                 let host = host.to_owned();
-                let port = uri.port_u16().unwrap_or(if uri.scheme() == Some(&http::uri::Scheme::HTTP) { 80 } else { 443 });
+                let port =
+                    uri.port_u16()
+                        .unwrap_or(if uri.scheme() == Some(&http::uri::Scheme::HTTP) {
+                            80
+                        } else {
+                            443
+                        });
                 let tunnel = tunnel::new(&host, port, &p.headers);
                 let connection =
                     proxy_dst(&uri, &p.uri).map(|proxy_url| self.connector.call(proxy_url));
@@ -470,11 +483,13 @@ where
 
                             #[cfg(feature = "rustls-base")]
                             Some(tls) => {
-                                let dnsref =
-                                    mtry!(DNSNameRef::try_from_ascii_str(&host).map_err(io_err));
+                                let server_name =
+                                    mtry!(ServerName::try_from(host.as_str()).map_err(io_err));
                                 let tls = TlsConnector::from(tls);
-                                let secure_stream =
-                                    mtry!(tls.connect(dnsref, tunnel_stream).await.map_err(io_err));
+                                let secure_stream = mtry!(tls
+                                    .connect(server_name, tunnel_stream)
+                                    .await
+                                    .map_err(io_err));
 
                                 Ok(ProxyStream::Secured(secure_stream))
                             }
